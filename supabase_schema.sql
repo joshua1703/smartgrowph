@@ -388,7 +388,7 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role
 GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role;
 
 -- ============================================================================
--- 7. INITIAL SEED DATA (Idempotent with fixed keys)
+-- 7. INITIAL CONFIGURATION (Default hardware definitions & system defaults)
 -- ============================================================================
 
 -- A. Default System Settings
@@ -398,50 +398,24 @@ ON CONFLICT (id) DO UPDATE SET
   temp_target = EXCLUDED.temp_target,
   humidity_target = EXCLUDED.humidity_target;
 
--- C. Default Actuators
+-- B. Default Actuator Hardware Definitions (Hardware pin mappings)
 INSERT INTO public.actuators (id, name, type, zone, is_active, status, watt_base)
 VALUES
   ('FAN-01', 'Exhaust Fan A', 'fan', 'Zone A', false, 'normal', 45),
   ('FAN-02', 'Exhaust Fan B', 'fan', 'Zone B', false, 'normal', 45),
-  ('FOG-01', 'Fogger Unit 1', 'fogger', 'Zone A', true, 'normal', 35),
+  ('FOG-01', 'Fogger Unit 1', 'fogger', 'Zone A', false, 'normal', 35),
   ('FOG-02', 'Fogger Unit 2', 'fogger', 'Zone C', false, 'normal', 35),
   ('SPR-01', 'Sprinkler System', 'sprinkler', 'Zone D', false, 'normal', 60),
-  ('LED-01', 'LED Grow Light A', 'led', 'Zone A', true, 'normal', 120),
-  ('LED-02', 'LED Grow Light B', 'led', 'Zone B', true, 'normal', 120)
+  ('LED-01', 'LED Grow Light A', 'led', 'Zone A', false, 'normal', 120),
+  ('LED-02', 'LED Grow Light B', 'led', 'Zone B', false, 'normal', 120)
 ON CONFLICT (id) DO NOTHING;
 
--- D. Sample Growth Batches
-INSERT INTO public.growth_batches (id, batch_name, substrate, variety, zone, start_date, current_stage, days_since_start, estimated_harvest_date, progress, yield, expected_yield, health_score, notes)
-VALUES
-  ('BATCH-001', 'Batch #1 — Pearl Oyster', 'Rice Straw + Sawdust Mix', 'Pearl Oyster (Pleurotus ostreatus)', 'Zone A', now() - interval '2 days', 'inoculation', 2, now() + interval '43 days', 4, null, 1200, 95, 'Spawn bags inoculated — monitoring for contamination.'),
-  ('BATCH-002', 'Batch #2 — Blue Oyster', 'Wheat Straw', 'Blue Oyster (Pleurotus columbinus)', 'Zone B', now() - interval '12 days', 'incubation', 12, now() + interval '33 days', 27, null, 1400, 92, 'Mycelium colonizing substrate nicely. Strong white spread.'),
-  ('BATCH-003', 'Batch #3 — Pink Oyster', 'Coconut Coir + Rice Bran', 'Pink Oyster (Pleurotus djamor)', 'Zone B', now() - interval '20 days', 'primordia', 20, now() + interval '25 days', 44, null, 1100, 88, 'Pinhead formation observed. Increasing humidity to 90%.'),
-  ('BATCH-004', 'Batch #4 — King Oyster', 'Coffee Grounds + Sawdust', 'King Oyster (Pleurotus eryngii)', 'Zone A', now() - interval '28 days', 'fruiting', 28, now() + interval '17 days', 62, null, 1500, 94, 'Caps expanding rapidly. Maintaining 24-26°C and high RH.'),
-  ('BATCH-005', 'Batch #5 — Pearl Oyster', 'Corn Cob + Rice Hull', 'Pearl Oyster (Pleurotus ostreatus)', 'Zone D', now() - interval '42 days', 'harvest', 42, now() + interval '3 days', 93, null, 1350, 96, 'Clusters fully mature. Harvest scheduled for tomorrow morning.'),
-  ('BATCH-006', 'Batch #6 — Blue Oyster', 'Rice Straw + Sawdust Mix', 'Blue Oyster (Pleurotus columbinus)', 'Zone C', now() - interval '50 days', 'completed', 50, now() - interval '5 days', 100, 1420, 1300, 98, 'Harvest completed with 1,420g total yield across 8 bags.')
-ON CONFLICT (id) DO NOTHING;
-
--- E. Sample Sensor Readings
-INSERT INTO public.sensor_readings (id, sensor_id, sensor_name, zone, temperature, humidity, soil_moisture, co2_level, light_intensity, status, created_at)
-VALUES
-  ('SR-00001', 'DHT22-A1', 'DHT22 Sensor A1', 'Zone A', 26.4, 88.5, 74.0, 520, 320, 'normal', now() - interval '10 minutes'),
-  ('SR-00002', 'DHT22-B1', 'DHT22 Sensor B1', 'Zone B', 25.8, 91.2, 78.5, 490, 280, 'normal', now() - interval '10 minutes'),
-  ('SR-00003', 'DHT22-C1', 'DHT22 Sensor C1', 'Zone C', 27.2, 84.0, 68.0, 580, 410, 'normal', now() - interval '10 minutes'),
-  ('SR-00004', 'DHT22-D1', 'DHT22 Sensor D1', 'Zone D', 26.0, 89.0, 72.5, 510, 300, 'normal', now() - interval '10 minutes')
-ON CONFLICT (id) DO NOTHING;
-
--- F. Sample Automations (Fixed UUIDs for idempotency)
-INSERT INTO public.device_automations (id, name, device, condition_type, operator, threshold, action, is_enabled)
-VALUES
-  ('a0000000-0000-0000-0000-000000000001', 'High Temp Exhaust Trigger', 'Exhaust Fan A', 'Temperature', '>', 28.0, 'Turn ON Exhaust Fan', true),
-  ('a0000000-0000-0000-0000-000000000002', 'Low Humidity Mist Trigger', 'Fogger Unit 1', 'Humidity', '<', 80.0, 'Turn ON Fogger Unit', true),
-  ('a0000000-0000-0000-0000-000000000003', 'High CO2 Safety Purge', 'Exhaust Fan B', 'CO2 Level', '>', 800.0, 'Turn ON Fan for 15 mins', true)
-ON CONFLICT (id) DO NOTHING;
-
--- G. Sample Schedules (Fixed UUIDs for idempotency)
-INSERT INTO public.device_schedules (id, device, start_time, end_time, days, is_active)
-VALUES
-  ('b0000000-0000-0000-0000-000000000001', 'LED Grow Light A', '06:00', '18:00', ARRAY['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], true),
-  ('b0000000-0000-0000-0000-000000000002', 'Fogger Unit 1', '08:00', '08:15', ARRAY['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], true),
-  ('b0000000-0000-0000-0000-000000000003', 'Fogger Unit 1', '14:00', '14:15', ARRAY['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], true)
-ON CONFLICT (id) DO NOTHING;
+-- ============================================================================
+-- OPTIONAL: RUN THIS TO PURGE ANY EXISTING DUMMY DATA FROM PREVIOUS RUNS
+-- ============================================================================
+-- TRUNCATE TABLE public.sensor_readings CASCADE;
+-- TRUNCATE TABLE public.growth_batches CASCADE;
+-- TRUNCATE TABLE public.daily_growth_logs CASCADE;
+-- TRUNCATE TABLE public.actuator_logs CASCADE;
+-- TRUNCATE TABLE public.device_automations CASCADE;
+-- TRUNCATE TABLE public.device_schedules CASCADE;

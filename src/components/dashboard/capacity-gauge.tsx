@@ -1,16 +1,88 @@
 "use client";
 
-import { ACTUATOR_USAGE_DATA } from "@/data/forecast-advanced";
+import { useQuery } from "@tanstack/react-query";
+import { createBrowserClient } from "@supabase/ssr";
+import type { Database } from "@/lib/supabase/types";
+import { Cpu } from "lucide-react";
 
 /**
  * Actuator Usage vs. Capacity gauge.
- * Shows each actuator's predicted runtime demand against available daily capacity,
- * helping the operator identify over-utilization before equipment issues arise.
+ * Queries actuators and calculates real logged runtime against daily capacity limits.
  */
 export function ActuatorCapacityGauge() {
+  const { data: usageData = [] } = useQuery({
+    queryKey: ["actuator-capacity-data"],
+    queryFn: async () => {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !supabaseKey) return [];
+
+      const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+
+      // Fetch defined actuators
+      const { data: actuators } = await supabase
+        .from("actuators")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (!actuators || actuators.length === 0) return [];
+
+      // Fetch actuator logs from today
+      const { data: logs } = await supabase
+        .from("actuator_logs")
+        .select("actuator_id, duration")
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      const colorMap: Record<string, string> = {
+        fan: "#10b981",
+        fogger: "#38bdf8",
+        sprinkler: "#a855f7",
+        led: "#fbbf24",
+      };
+
+      const maxCapMap: Record<string, number> = {
+        fan: 12,
+        fogger: 8,
+        sprinkler: 4,
+        led: 16,
+      };
+
+      return actuators.map((a) => {
+        const matchingLogs = (logs || []).filter((l) => l.actuator_id === a.id);
+        const totalMinutes = matchingLogs.reduce((acc, l) => acc + (l.duration || 0), 0);
+        const dailyRuntime = Number((totalMinutes / 60).toFixed(1));
+        const maxCapacity = maxCapMap[a.type] || 10;
+        const color = colorMap[a.type] || "#10b981";
+
+        return {
+          id: a.id,
+          actuator: a.name,
+          dailyRuntime,
+          maxCapacity,
+          color,
+          isActive: a.is_active,
+        };
+      });
+    },
+    refetchInterval: 5000,
+  });
+
+  if (usageData.length === 0) {
+    return (
+      <div className="h-[240px] w-full flex flex-col items-center justify-center text-center p-6 bg-muted/10 rounded-xl border border-dashed border-border/60 text-muted-foreground">
+        <Cpu className="size-8 text-muted-foreground/40 mb-2 animate-pulse" />
+        <p className="text-xs font-semibold text-foreground">No actuators configured in database</p>
+        <p className="text-[11px] text-muted-foreground/70 max-w-xs mt-1">
+          Actuator capacity metrics will render once hardware units are connected to Supabase.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full space-y-5">
-      {ACTUATOR_USAGE_DATA.map((row) => {
+      {usageData.map((row) => {
         const pct = Math.min(
           100,
           Math.round((row.dailyRuntime / row.maxCapacity) * 100),
@@ -19,7 +91,7 @@ export function ActuatorCapacityGauge() {
         const isOverCapacity = pct >= 95;
 
         return (
-          <div key={row.actuator} className="space-y-1.5">
+          <div key={row.id} className="space-y-1.5">
             {/* Labels row */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-4 text-xs">
               <span className="font-bold text-foreground truncate">
@@ -103,7 +175,9 @@ export function ActuatorCapacityGauge() {
                   ? "Over capacity — check actuator health"
                   : isHighUsage
                   ? "High utilization — monitor performance"
-                  : "Normal operation within capacity"}
+                  : row.dailyRuntime > 0
+                  ? "Normal operation within capacity"
+                  : "Standby — 0h runtime today"}
               </span>
             </div>
           </div>

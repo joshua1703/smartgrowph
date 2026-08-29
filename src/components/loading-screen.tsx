@@ -60,12 +60,6 @@ export function LoadingScreen({
             style={{ animationDelay: "360ms" }}
           />
         </div>
-
-        {/* ── Hardware & Network Badge ── */}
-        <div className="flex items-center gap-2 rounded-full border border-border/80 bg-card/80 px-3.5 py-1.5 text-[11px] font-mono text-muted-foreground shadow-xs backdrop-blur-md">
-          <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>ESP32 Telemetry Sync · 256-bit TLS</span>
-        </div>
       </div>
     </div>
   );

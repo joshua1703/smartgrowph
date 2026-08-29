@@ -10,11 +10,10 @@ import {
   History,
   LineChart,
   Power,
-  ShieldCheck,
+  CheckCircle2,
   Sparkles,
   Sprout,
   Thermometer,
-  Zap,
 } from "lucide-react";
 import { SectionHeading } from "./section-heading";
 import { Reveal } from "./reveal";
@@ -29,7 +28,7 @@ const traces = [
   {
     label: "Automation Rule Trigger Logs",
     desc: "Exact trigger timestamps, sensor thresholds crossed, and relay actions taken.",
-    icon: Zap,
+    icon: Sparkles,
   },
   {
     label: "Actuator Runtime & Energy",
@@ -134,7 +133,7 @@ export function AuditSection() {
 
             <Reveal delay={160}>
               <div className="mt-6 flex items-center gap-3 rounded-xl border border-border/70 bg-muted/20 p-4 text-xs text-muted-foreground">
-                <ShieldCheck className="size-5 text-primary shrink-0" />
+                <CheckCircle2 className="size-5 text-primary shrink-0" />
                 <span>
                   All event records are safely indexed in structured relational tables in MySQL for reliable auditing and CSV/JSON export.
                 </span>

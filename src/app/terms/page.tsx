@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Shield, Sprout } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Lock, Sprout } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/brand-logo";
@@ -44,7 +44,7 @@ export default function TermsPage() {
         {/* Header Title */}
         <div className="space-y-3 border-b border-border/80 pb-8">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-            <Shield className="size-3.5" />
+            <Lock className="size-3.5" />
             <span>Legal Documentation</span>
           </div>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-foreground">

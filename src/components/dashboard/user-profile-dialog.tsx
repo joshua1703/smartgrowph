@@ -14,7 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { Camera, Loader2, ShieldCheck } from "lucide-react";
+import { Camera, Loader2, CheckCircle2 } from "lucide-react";
+import { useUserRole } from "@/lib/use-user-role";
 
 interface UserProfileDialogProps {
   open: boolean;
@@ -23,6 +24,7 @@ interface UserProfileDialogProps {
 
 export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps) {
   const { user, isLoaded } = useUser();
+  const { role } = useUserRole();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [firstName, setFirstName] = useState("");
@@ -57,6 +59,8 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
 
     try {
       await user.setProfileImage({ file });
+      // Sync to Supabase
+      await fetch("/api/sync-user", { method: "POST" });
       toast.success("Profile picture updated successfully!");
     } catch (err: unknown) {
       console.error("Failed to upload profile picture:", err);
@@ -64,7 +68,6 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
       setPreviewImage(null);
     } finally {
       setIsUploadingImage(false);
-      // Reset input value
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -81,6 +84,8 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
         firstName: firstName.trim(),
         lastName: lastName.trim(),
       });
+      // Sync to Supabase
+      await fetch("/api/sync-user", { method: "POST" });
       toast.success("Profile updated successfully!");
       onOpenChange(false);
     } catch (err: unknown) {
@@ -92,7 +97,11 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
   };
 
   const currentImageUrl = previewImage || user?.imageUrl;
-  const userInitials = (firstName ? firstName.slice(0, 1) : "S") + (lastName ? lastName.slice(0, 1) : "G");
+  const userInitials = (
+    (firstName ? firstName.slice(0, 1) : "") + (lastName ? lastName.slice(0, 1) : "") ||
+    user?.fullName?.slice(0, 2) ||
+    "SG"
+  ).toUpperCase();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -106,7 +115,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
           </DialogDescription>
         </DialogHeader>
 
-        {/* ── User Identity Banner with Avatar Upload ── */}
+        {/* ── User Identity Banner with Clickable Avatar Upload ── */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-muted/40 p-4">
           
           {/* Avatar with Clickable Camera Overlay */}
@@ -125,7 +134,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploadingImage}
               className="group relative flex size-14 cursor-pointer items-center justify-center rounded-full outline-hidden ring-2 ring-primary/30 transition-all hover:ring-primary focus-visible:ring-2 focus-visible:ring-primary"
-              title="Click to change profile picture"
+              title="Click photo to change profile picture"
             >
               <Avatar className="size-14 border-2 border-background shadow-xs">
                 {currentImageUrl ? (
@@ -137,7 +146,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
                   />
                 ) : (
                   <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-base font-bold text-white">
-                    {userInitials.toUpperCase()}
+                    {userInitials}
                   </AvatarFallback>
                 )}
               </Avatar>
@@ -162,35 +171,22 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
             </button>
           </div>
 
-          {/* User Details & Upload Prompt */}
+          {/* User Details */}
           <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex items-center justify-between">
-              <p className="truncate text-sm font-bold text-foreground">
-                {user?.fullName || "SmartGrow Operator"}
-              </p>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploadingImage}
-                className="h-7 text-[11px] font-semibold text-primary hover:text-primary hover:bg-primary/10 rounded-lg px-2 cursor-pointer gap-1.5"
-              >
-                <Camera className="size-3.5" />
-                <span>Change Photo</span>
-              </Button>
-            </div>
+            <p className="truncate text-sm font-bold text-foreground">
+              {user?.fullName || "SmartGrow Operator"}
+            </p>
             <p className="truncate text-xs text-muted-foreground font-mono">
               {user?.primaryEmailAddress?.emailAddress || "Google Account"}
             </p>
             <div className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-              <ShieldCheck className="size-3" />
-              <span>Google SSO Authenticated · Operator</span>
+              <CheckCircle2 className="size-3" />
+              <span className="uppercase">Google SSO Authenticated · {role}</span>
             </div>
           </div>
         </div>
 
-        {/* ── Profile Edit Form ── */}
+        {/* ── Profile Edit Form (Clean First Name & Last Name) ── */}
         <form onSubmit={handleUpdateProfile} className="space-y-4 pt-1">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -221,20 +217,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-xs font-semibold text-foreground">
-              Primary Email
-            </Label>
-            <Input
-              id="email"
-              value={user?.primaryEmailAddress?.emailAddress || ""}
-              readOnly
-              disabled
-              className="h-10 rounded-xl text-xs bg-muted/60 text-muted-foreground cursor-not-allowed"
-            />
-          </div>
-
-          {/* ── Actions Footer (Half Width Cancel & Save Changes) ── */}
+          {/* ── Actions Footer ── */}
           <div className="pt-3 grid grid-cols-2 gap-3 border-t border-border/80 w-full">
             <Button
               type="button"
@@ -247,7 +230,7 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
             <Button
               type="submit"
               disabled={isSaving || !isLoaded || isUploadingImage}
-              className="h-10 w-full rounded-xl text-xs font-bold cursor-pointer"
+              className="h-10 w-full rounded-xl text-xs font-bold cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {isSaving ? (
                 <>

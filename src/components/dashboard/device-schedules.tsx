@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, Trash2, Clock } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createBrowserClient } from "@supabase/ssr";
+import type { Database } from "@/lib/supabase/types";
+import { Plus, Trash2, Clock, Calendar, Cpu } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -29,62 +32,188 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-
 import { toast } from "sonner";
+import { useUserRole } from "@/lib/use-user-role";
 
 export function DeviceSchedules() {
-  const [schedules, setSchedules] = useState([
-    { id: 1, time: "08:00 AM", duration: "15 mins", actuator: "sprinkler", days: "Daily", active: true },
-    { id: 2, time: "12:00 PM", duration: "30 mins", actuator: "fan", days: "Mon, Wed, Fri", active: false },
-  ]);
+  const queryClient = useQueryClient();
+  const { canControlDevices, role } = useUserRole();
 
   const [isAddScheduleOpen, setIsAddScheduleOpen] = useState(false);
-  const [newTime, setNewTime] = useState("06:00 PM");
-  const [newDuration, setNewDuration] = useState("10 mins");
-  const [newActuator, setNewActuator] = useState("fogger");
+  const [newTime, setNewTime] = useState("08:00");
+  const [newDuration, setNewDuration] = useState("15 mins");
+  const [newActuator, setNewActuator] = useState("sprinkler");
   const [newDays, setNewDays] = useState("Daily");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const toggleSchedule = (id: number) => {
-    const target = schedules.find((s) => s.id === id);
-    setSchedules(schedules.map((s) => (s.id === id ? { ...s, active: !s.active } : s)));
-    if (target) {
-      if (!target.active) {
+  // 1. Fetch Schedules from Supabase
+  const { data: schedules = [], isLoading } = useQuery({
+    queryKey: ["device-schedules"],
+    queryFn: async () => {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !supabaseKey) return [];
+
+      const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+      const { data, error } = await supabase
+        .from("device_schedules")
+        .select("*")
+        .order("start_time", { ascending: true });
+
+      if (error || !data) return [];
+      return data;
+    },
+    refetchInterval: 5000,
+  });
+
+  // 2. Realtime Subscription
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if (!supabaseUrl || !supabaseKey) return;
+
+    const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+    const channelId = `schedules-sync-${Math.random().toString(36).slice(2, 9)}`;
+
+    const channel = supabase
+      .channel(channelId)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "device_schedules" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["device-schedules"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
+  // Toggle Schedule State in Supabase
+  const toggleSchedule = async (id: string, currentActive: boolean, device: string, time: string) => {
+    if (!canControlDevices) {
+      toast.error("Permission Denied", {
+        description: `Your role is '${role.toUpperCase()}'. Managing schedules requires Operator or Admin privileges.`,
+      });
+      return;
+    }
+
+    const nextActive = !currentActive;
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !supabaseKey) return;
+
+      const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+      const { error } = await supabase
+        .from("device_schedules")
+        .update({ is_active: nextActive, updated_at: new Date().toISOString() })
+        .eq("id", id);
+
+      if (error) {
+        toast.error("Update Failed", { description: error.message });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["device-schedules"] });
+
+      if (nextActive) {
         toast.success("Schedule Activated", {
-          description: `${target.actuator} timer active: ${target.time} (${target.duration})`,
+          description: `${device} timer active at ${time}.`,
         });
       } else {
         toast.info("Schedule Paused", {
-          description: `${target.actuator} timer paused.`,
+          description: `${device} timer paused.`,
         });
       }
+    } catch {
+      toast.error("Failed to toggle schedule.");
     }
   };
 
-  const removeSchedule = (id: number) => {
-    const target = schedules.find((s) => s.id === id);
-    setSchedules(schedules.filter((s) => s.id !== id));
-    toast.error("Schedule Removed", {
-      description: `Schedule for ${target?.actuator || "actuator"} has been removed.`,
-    });
+  // Remove Schedule from Supabase
+  const removeSchedule = async (id: string, device: string) => {
+    if (!canControlDevices) {
+      toast.error("Permission Denied", {
+        description: `Your role is '${role.toUpperCase()}'. Managing schedules requires Operator or Admin privileges.`,
+      });
+      return;
+    }
+
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !supabaseKey) return;
+
+      const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+      const { error } = await supabase
+        .from("device_schedules")
+        .delete()
+        .eq("id", id);
+
+      if (error) {
+        toast.error("Delete Failed", { description: error.message });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["device-schedules"] });
+      toast.error("Schedule Removed", {
+        description: `Schedule for ${device} has been removed from database.`,
+      });
+    } catch {
+      toast.error("Failed to delete schedule.");
+    }
   };
 
-  const handleAddSchedule = () => {
-    const newId = schedules.length > 0 ? Math.max(...schedules.map((s) => s.id)) + 1 : 1;
-    setSchedules([
-      ...schedules,
-      {
-        id: newId,
-        time: newTime,
-        duration: newDuration,
-        actuator: newActuator,
-        days: newDays,
-        active: true,
-      },
-    ]);
-    toast.success("New Schedule Created", {
-      description: `${newActuator} scheduled for ${newTime} (${newDuration}, ${newDays})`,
-    });
-    setIsAddScheduleOpen(false);
+  // Add Schedule in Supabase
+  const handleAddSchedule = async () => {
+    if (!canControlDevices) {
+      toast.error("Permission Denied", {
+        description: `Your role is '${role.toUpperCase()}'. Managing schedules requires Operator or Admin privileges.`,
+      });
+      return;
+    }
+
+    const daysArray =
+      newDays === "Daily"
+        ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        : newDays === "Mon, Wed, Fri"
+        ? ["Mon", "Wed", "Fri"]
+        : ["Sat", "Sun"];
+
+    setIsSaving(true);
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !supabaseKey) return;
+
+      const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+      const { error } = await supabase.from("device_schedules").insert({
+        device: newActuator,
+        start_time: newTime,
+        end_time: newDuration,
+        days: daysArray,
+        is_active: true,
+      });
+
+      if (error) {
+        toast.error("Save Failed", { description: error.message });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["device-schedules"] });
+      toast.success("New Schedule Created", {
+        description: `${newActuator} scheduled for ${newTime} (${newDuration}, ${newDays})`,
+      });
+      setIsAddScheduleOpen(false);
+    } catch {
+      toast.error("Failed to create schedule.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -96,12 +225,12 @@ export function DeviceSchedules() {
               Scheduled Actions
             </CardTitle>
             <CardDescription className="text-[11px] font-medium text-muted-foreground/60">
-              Run actuators on a fixed time schedule.
+              Run actuators on a fixed time schedule saved in Supabase.
             </CardDescription>
           </div>
           <Dialog open={isAddScheduleOpen} onOpenChange={setIsAddScheduleOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="icon" className="h-8 w-8">
+              <Button variant="outline" size="icon" className="h-8 w-8" disabled={!canControlDevices}>
                 <Plus className="h-4 w-4" />
               </Button>
             </DialogTrigger>
@@ -114,17 +243,16 @@ export function DeviceSchedules() {
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Time</Label>
+                  <Label className="text-right text-xs">Start Time</Label>
                   <Input 
-                    type="text" 
-                    placeholder="e.g. 08:00 AM"
+                    type="time" 
                     value={newTime} 
                     onChange={(e) => setNewTime(e.target.value)} 
                     className="col-span-3"
                   />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Duration</Label>
+                  <Label className="text-right text-xs">Duration</Label>
                   <Select value={newDuration} onValueChange={setNewDuration}>
                     <SelectTrigger className="col-span-3">
                       <SelectValue />
@@ -139,7 +267,7 @@ export function DeviceSchedules() {
                   </Select>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Actuator</Label>
+                  <Label className="text-right text-xs">Actuator</Label>
                   <Select value={newActuator} onValueChange={setNewActuator}>
                     <SelectTrigger className="col-span-3">
                       <SelectValue />
@@ -148,12 +276,12 @@ export function DeviceSchedules() {
                       <SelectItem value="fan">Fan (Cooling)</SelectItem>
                       <SelectItem value="fogger">Fogger (Humidity)</SelectItem>
                       <SelectItem value="sprinkler">Sprinkler (Watering)</SelectItem>
-                      <SelectItem value="exhaust">Exhaust Vent (CO₂)</SelectItem>
+                      <SelectItem value="led">LED Grow Light</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Frequency</Label>
+                  <Label className="text-right text-xs">Frequency</Label>
                   <Select value={newDays} onValueChange={setNewDays}>
                     <SelectTrigger className="col-span-3">
                       <SelectValue />
@@ -167,46 +295,65 @@ export function DeviceSchedules() {
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddScheduleOpen(false)}>Cancel</Button>
-                <Button onClick={handleAddSchedule}>Save Schedule</Button>
+                <Button variant="outline" onClick={() => setIsAddScheduleOpen(false)} disabled={isSaving}>Cancel</Button>
+                <Button onClick={handleAddSchedule} disabled={isSaving}>
+                  {isSaving ? "Saving..." : "Save Schedule"}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-4">
-        {schedules.map((schedule) => (
-          <div
-            key={schedule.id}
-            className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-muted/20"
-          >
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <Clock className="h-3.5 w-3.5 text-primary" />
-                <span className="text-sm font-semibold text-foreground">{schedule.time}</span>
-                <span className="text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium capitalize">
-                  {schedule.actuator}
-                </span>
+      <CardContent className="flex-1 flex flex-col gap-3">
+        {isLoading && schedules.length === 0 ? (
+          <div className="py-8 text-center text-xs text-muted-foreground">
+            <Cpu className="size-6 mx-auto mb-2 animate-pulse text-muted-foreground/40" />
+            Loading schedules from Supabase...
+          </div>
+        ) : schedules.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center bg-muted/10 rounded-xl border border-dashed border-border/60">
+            <Calendar className="size-7 text-muted-foreground/40 mb-2" />
+            <p className="text-xs font-semibold text-foreground">No schedules configured</p>
+            <p className="text-[11px] text-muted-foreground/60 mt-1">Click the + button to create a timer.</p>
+          </div>
+        ) : (
+          schedules.map((schedule) => (
+            <div
+              key={schedule.id}
+              className="flex items-center justify-between p-3 rounded-xl border border-border/50 bg-muted/20 hover:bg-muted/40 transition-all"
+            >
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-xs font-bold text-foreground">{schedule.start_time}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold uppercase tracking-wider">
+                    {schedule.device}
+                  </span>
+                </div>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                  <span className="font-medium">{Array.isArray(schedule.days) ? schedule.days.join(", ") : "Daily"}</span>
+                  <span className="size-1 rounded-full bg-muted-foreground/40"></span>
+                  <span>Run for {schedule.end_time || "15 mins"}</span>
+                </p>
               </div>
-              <p className="text-[11px] text-muted-foreground flex items-center gap-2">
-                <span>{schedule.days}</span>
-                <span className="w-1 h-1 rounded-full bg-muted-foreground/40"></span>
-                <span>Run for {schedule.duration}</span>
-              </p>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={schedule.is_active}
+                  disabled={!canControlDevices}
+                  onCheckedChange={() => toggleSchedule(schedule.id, schedule.is_active, schedule.device, schedule.start_time)}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  disabled={!canControlDevices}
+                  onClick={() => removeSchedule(schedule.id, schedule.device)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Switch checked={schedule.active} onCheckedChange={() => toggleSchedule(schedule.id)} />
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeSchedule(schedule.id)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        ))}
-        {schedules.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <p className="text-sm text-muted-foreground">No schedules configured.</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">Click the + button to add one.</p>
-          </div>
+          ))
         )}
       </CardContent>
     </Card>

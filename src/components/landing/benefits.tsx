@@ -1,15 +1,14 @@
 "use client";
 
 import {
-  Activity,
   BarChart3,
   CheckCircle2,
   Clock,
+  Cpu,
+  Eye,
   Gauge,
   Layers,
-  ShieldCheck,
   Sprout,
-  Zap,
 } from "lucide-react";
 import { SectionHeading } from "./section-heading";
 import { Reveal } from "./reveal";
@@ -19,14 +18,14 @@ const benefits = [
     n: "01",
     title: "Reduce manual monitoring overhead",
     description: "Calibrated IoT probes monitor temperature, humidity, and CO₂ around the clock, eliminating manual walkthroughs with handheld tools.",
-    icon: Activity,
+    icon: Eye,
     highlight: "Autonomous Sensing",
   },
   {
     n: "02",
     title: "Respond instantly to microclimate swings",
     description: "The ESP32 loop triggers cooling fans or ultrasonic foggers in sub-seconds, halting heat spikes and dry conditions before crop stress occurs.",
-    icon: Zap,
+    icon: Cpu,
     highlight: "Sub-Second Action",
   },
   {
