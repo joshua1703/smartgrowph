@@ -38,6 +38,15 @@ import {
 } from "@/components/ui/table";
 import { TablePagination } from "@/components/dashboard/table-pagination";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -65,7 +74,16 @@ import {
   Leaf,
   TrendingUp,
   Loader2,
+  Plus,
+  PlusCircle,
+  Sparkles,
+  Pencil,
+  Trash2,
+  Eye,
+  AlertTriangle,
 } from "lucide-react";
+import { useUserRole } from "@/lib/use-user-role";
+import { logSystemActivity } from "@/lib/audit-logger";
 import {
   ResponsiveContainer,
   PieChart,
@@ -92,11 +110,53 @@ type OptionalBatchColumn =
 
 export default function GrowthTrackingPage() {
   const queryClient = useQueryClient();
+  const { canManageBatches, canControlDevices, isAdmin, isViewer, role } = useUserRole();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [selectedBatch, setSelectedBatch] = useState<GrowthBatch | null>(null);
   const [isUpdatingStage, setIsUpdatingStage] = useState(false);
+
+  // Modal dialog states
+  const [isAddBatchOpen, setIsAddBatchOpen] = useState(false);
+  const [isLogMeasurementOpen, setIsLogMeasurementOpen] = useState(false);
+  const [isEditBatchOpen, setIsEditBatchOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [batchToDelete, setBatchToDelete] = useState<GrowthBatch | null>(null);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [isSubmittingBatch, setIsSubmittingBatch] = useState(false);
+  const [isSubmittingLog, setIsSubmittingLog] = useState(false);
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+
+  // New batch form state
+  const [batchName, setBatchName] = useState("Batch #01 — Pearl Oyster");
+  const [variety, setVariety] = useState("Pearl Oyster (Pleurotus ostreatus)");
+  const [substrate, setSubstrate] = useState("Rice Straw + Sawdust Mix");
+  const [zone, setZone] = useState("Fruiting Bay - Zone A");
+  const [currentStage, setCurrentStage] = useState<GrowthStage>("fruiting");
+  const [expectedYield, setExpectedYield] = useState("1200");
+  const [notes, setNotes] = useState("Healthy mycelium growth observed.");
+
+  // Edit batch form state
+  const [editBatchId, setEditBatchId] = useState("");
+  const [editBatchName, setEditBatchName] = useState("");
+  const [editVariety, setEditVariety] = useState("");
+  const [editSubstrate, setEditSubstrate] = useState("");
+  const [editZone, setEditZone] = useState("");
+  const [editStage, setEditStage] = useState<GrowthStage>("fruiting");
+  const [editProgress, setEditProgress] = useState("80");
+  const [editHealthScore, setEditHealthScore] = useState("95");
+  const [editYield, setEditYield] = useState("");
+  const [editExpectedYield, setEditExpectedYield] = useState("1000");
+  const [editNotes, setEditNotes] = useState("");
+
+  // Daily measurement form state
+  const [measBatchId, setMeasBatchId] = useState("");
+  const [measHeight, setMeasHeight] = useState("4.5");
+  const [measCapDiameter, setMeasCapDiameter] = useState("3.2");
+  const [measMoisture, setMeasMoisture] = useState("86.0");
+  const [measPins, setMeasPins] = useState("8");
 
   // Column Visibility Toggle State (Batch ID is unhideable)
   const [visibleColumns, setVisibleColumns] = useState<Record<OptionalBatchColumn, boolean>>({
@@ -117,6 +177,408 @@ export default function GrowthTrackingPage() {
   const visibleColumnCount = useMemo(() => {
     return 1 + Object.values(visibleColumns).filter(Boolean).length;
   }, [visibleColumns]);
+
+  const handleAddBatch = async () => {
+    if (!canManageBatches) {
+      toast.error("Permission Denied", {
+        description: `Your role (${role.toUpperCase()}) cannot create cultivation batches. Operators and Admins only.`,
+      });
+      return;
+    }
+
+    if (!batchName.trim()) {
+      toast.error("Please enter a batch name.");
+      return;
+    }
+
+    setIsSubmittingBatch(true);
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !supabaseKey) return;
+
+      const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+      const batchId = `BATCH-${Date.now().toString(36).toUpperCase()}`;
+
+      const { error } = await supabase.from("growth_batches").insert({
+        id: batchId,
+        batch_name: batchName,
+        variety,
+        substrate,
+        zone,
+        current_stage: currentStage,
+        days_since_start: currentStage === "inoculation" ? 1 : currentStage === "incubation" ? 7 : currentStage === "primordia" ? 14 : 20,
+        progress: currentStage === "inoculation" ? 10 : currentStage === "incubation" ? 40 : currentStage === "primordia" ? 70 : 85,
+        expected_yield: parseInt(expectedYield) || 1000,
+        health_score: 95,
+        notes,
+        start_date: new Date().toISOString(),
+        estimated_harvest_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+
+      if (error) {
+        toast.error("Failed to add batch", { description: error.message });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["growth-batches"] });
+
+      // Log in system logs
+      logSystemActivity({
+        source: "BATCH",
+        category: "crud",
+        severity: "success",
+        action: "CREATE_BATCH",
+        message: `Registered new cultivation batch '${batchName}'`,
+        details: `Variety: ${variety}, Substrate: ${substrate}, Zone: ${zone}`,
+      });
+
+      toast.success("Cultivation Batch Registered", {
+        description: `${batchName} has been added to greenhouse database.`,
+      });
+      setIsAddBatchOpen(false);
+    } catch {
+      toast.error("Failed to register batch.");
+    } finally {
+      setIsSubmittingBatch(false);
+    }
+  };
+
+  const handleLogMeasurement = async () => {
+    if (!canControlDevices) {
+      toast.error("Permission Denied", {
+        description: `Your role (${role.toUpperCase()}) cannot record daily growth telemetry.`,
+      });
+      return;
+    }
+
+    if (!measBatchId) {
+      toast.error("Please select a batch.");
+      return;
+    }
+
+    setIsSubmittingLog(true);
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !supabaseKey) return;
+
+      const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+
+      const { error } = await supabase.from("daily_growth_logs").insert({
+        batch_id: measBatchId,
+        height: parseFloat(measHeight) || 0,
+        cap_diameter: parseFloat(measCapDiameter) || 0,
+        moisture_level: parseFloat(measMoisture) || 85.0,
+        primordia_density: parseInt(measPins) || 0,
+        contamination: false,
+        date: new Date().toISOString(),
+      });
+
+      if (error) {
+        toast.error("Failed to record growth log", { description: error.message });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["daily-growth-logs"] });
+
+      // Log in system logs
+      logSystemActivity({
+        source: "BATCH",
+        category: "crud",
+        severity: "info",
+        action: "LOG_GROWTH",
+        message: `Logged growth measurements for batch ${measBatchId}`,
+        details: `Height: ${measHeight}cm, Cap: ${measCapDiameter}cm, Moisture: ${measMoisture}%`,
+      });
+
+      toast.success("Growth Measurements Recorded", {
+        description: `Height: ${measHeight}cm, Cap Diameter: ${measCapDiameter}cm saved.`,
+      });
+      setIsLogMeasurementOpen(false);
+    } catch {
+      toast.error("Failed to record measurement.");
+    } finally {
+      setIsSubmittingLog(false);
+    }
+  };
+
+  const openEditModal = (batch: GrowthBatch) => {
+    setEditBatchId(batch.id);
+    setEditBatchName(batch.batchName);
+    setEditVariety(batch.variety);
+    setEditSubstrate(batch.substrate);
+    setEditZone(batch.zone);
+    setEditStage(batch.currentStage);
+    setEditProgress(String(batch.progress));
+    setEditHealthScore(String(batch.healthScore));
+    setEditYield(batch.yield != null ? String(batch.yield) : "");
+    setEditExpectedYield(String(batch.expectedYield));
+    setEditNotes(batch.notes || "");
+    setIsEditBatchOpen(true);
+  };
+
+  const handleEditBatch = async () => {
+    if (!canManageBatches) {
+      toast.error("Permission Denied", {
+        description: `Your role (${role.toUpperCase()}) cannot edit batch parameters.`,
+      });
+      return;
+    }
+
+    if (!editBatchName.trim()) {
+      toast.error("Batch name is required.");
+      return;
+    }
+
+    setIsSubmittingEdit(true);
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !supabaseKey) return;
+
+      const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+
+      const updatePayload = {
+        batch_name: editBatchName,
+        variety: editVariety,
+        substrate: editSubstrate,
+        zone: editZone,
+        current_stage: editStage,
+        progress: parseInt(editProgress) || 0,
+        health_score: parseInt(editHealthScore) || 90,
+        yield: editYield ? parseInt(editYield) : null,
+        expected_yield: parseInt(editExpectedYield) || 1000,
+        notes: editNotes,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from("growth_batches")
+        .update(updatePayload)
+        .eq("id", editBatchId);
+
+      if (error) {
+        toast.error("Failed to update batch", { description: error.message });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["growth-batches"] });
+
+      if (selectedBatch?.id === editBatchId) {
+        setSelectedBatch((prev) =>
+          prev
+            ? {
+                ...prev,
+                batchName: editBatchName,
+                variety: editVariety,
+                substrate: editSubstrate,
+                zone: editZone,
+                currentStage: editStage,
+                progress: parseInt(editProgress) || 0,
+                healthScore: parseInt(editHealthScore) || 90,
+                yield: editYield ? parseInt(editYield) : null,
+                expectedYield: parseInt(editExpectedYield) || 1000,
+                notes: editNotes,
+              }
+            : null
+        );
+      }
+
+      logSystemActivity({
+        source: "BATCH",
+        category: "crud",
+        severity: "info",
+        action: "UPDATE_BATCH",
+        message: `Updated cultivation batch '${editBatchName}' (${editBatchId})`,
+        details: `Stage: ${editStage}, Health: ${editHealthScore}%, Yield: ${editYield ? `${editYield}g` : "N/A"}`,
+      });
+
+      toast.success("Cultivation Batch Updated", {
+        description: `Changes to ${editBatchName} saved successfully.`,
+      });
+      setIsEditBatchOpen(false);
+    } catch {
+      toast.error("Failed to update batch.");
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
+
+  const handleDeleteBatch = async () => {
+    if (!isAdmin && !canManageBatches) {
+      toast.error("Permission Denied", {
+        description: `Only Operators and Admins can delete batches.`,
+      });
+      return;
+    }
+
+    if (!batchToDelete) return;
+    setIsSubmittingDelete(true);
+
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !supabaseKey) return;
+
+      const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+
+      // 1. Delete associated daily growth logs
+      await supabase.from("daily_growth_logs").delete().eq("batch_id", batchToDelete.id);
+
+      // 2. Delete the batch
+      const { error } = await supabase
+        .from("growth_batches")
+        .delete()
+        .eq("id", batchToDelete.id);
+
+      if (error) {
+        toast.error("Failed to delete batch", { description: error.message });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["growth-batches"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-growth-logs"] });
+
+      if (selectedBatch?.id === batchToDelete.id) {
+        setSelectedBatch(null);
+      }
+
+      logSystemActivity({
+        source: "BATCH",
+        category: "crud",
+        severity: "warning",
+        action: "DELETE_BATCH",
+        message: `Deleted cultivation batch '${batchToDelete.batchName}' (${batchToDelete.id})`,
+        details: `Removed batch and associated growth telemetry records.`,
+      });
+
+      toast.success("Batch Deleted", {
+        description: `${batchToDelete.batchName} has been removed from database.`,
+      });
+      setIsDeleteDialogOpen(false);
+      setBatchToDelete(null);
+    } catch {
+      toast.error("Failed to delete batch.");
+    } finally {
+      setIsSubmittingDelete(false);
+    }
+  };
+
+  const handleSeedSampleBatches = async () => {
+    setIsSeeding(true);
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !supabaseKey) return;
+
+      const supabase = createBrowserClient<Database>(supabaseUrl, supabaseKey);
+
+      const sampleBatches = [
+        {
+          id: "BATCH-001",
+          batch_name: "Batch #01 — Pearl Oyster",
+          variety: "Pearl Oyster (Pleurotus ostreatus)",
+          substrate: "Rice Straw + Sawdust Mix",
+          zone: "Fruiting Bay - Zone A",
+          current_stage: "fruiting" as GrowthStage,
+          days_since_start: 18,
+          progress: 85,
+          expected_yield: 1500,
+          health_score: 96,
+          notes: "Rapid fruiting body expansion under 88% humidity misting.",
+          start_date: new Date(Date.now() - 18 * 86400000).toISOString(),
+          estimated_harvest_date: new Date(Date.now() + 4 * 86400000).toISOString(),
+        },
+        {
+          id: "BATCH-002",
+          batch_name: "Batch #02 — Blue Oyster",
+          variety: "Blue Oyster (Pleurotus columbinus)",
+          substrate: "Coconut Coir + Rice Bran",
+          zone: "Fruiting Bay - Zone B",
+          current_stage: "primordia" as GrowthStage,
+          days_since_start: 12,
+          progress: 60,
+          expected_yield: 1200,
+          health_score: 92,
+          notes: "Dense pinhead formation clusters observed.",
+          start_date: new Date(Date.now() - 12 * 86400000).toISOString(),
+          estimated_harvest_date: new Date(Date.now() + 10 * 86400000).toISOString(),
+        },
+        {
+          id: "BATCH-003",
+          batch_name: "Batch #03 — King Oyster",
+          variety: "King Oyster (Pleurotus eryngii)",
+          substrate: "Wheat Straw Mix",
+          zone: "Incubation Room",
+          current_stage: "incubation" as GrowthStage,
+          days_since_start: 6,
+          progress: 30,
+          expected_yield: 1800,
+          health_score: 98,
+          notes: "Colonization running smoothly without contamination.",
+          start_date: new Date(Date.now() - 6 * 86400000).toISOString(),
+          estimated_harvest_date: new Date(Date.now() + 20 * 86400000).toISOString(),
+        },
+        {
+          id: "BATCH-004",
+          batch_name: "Batch #04 — Pearl Oyster Flush 1",
+          variety: "Pearl Oyster (Pleurotus ostreatus)",
+          substrate: "Rice Straw + Sawdust Mix",
+          zone: "Fruiting Bay - Zone A",
+          current_stage: "completed" as GrowthStage,
+          days_since_start: 25,
+          progress: 100,
+          yield: 1450,
+          expected_yield: 1400,
+          health_score: 94,
+          notes: "First flush harvested successfully with prime cap quality.",
+          start_date: new Date(Date.now() - 25 * 86400000).toISOString(),
+          estimated_harvest_date: new Date(Date.now() - 1 * 86400000).toISOString(),
+        },
+      ];
+
+      for (const b of sampleBatches) {
+        await supabase.from("growth_batches").upsert(b as any);
+      }
+
+      // Sample daily logs
+      const sampleLogs = [
+        { batch_id: "BATCH-001", date: new Date(Date.now() - 6 * 86400000).toISOString(), height: 1.2, cap_diameter: 0.8, moisture_level: 86, primordia_density: 8 },
+        { batch_id: "BATCH-001", date: new Date(Date.now() - 5 * 86400000).toISOString(), height: 2.1, cap_diameter: 1.4, moisture_level: 88, primordia_density: 8 },
+        { batch_id: "BATCH-001", date: new Date(Date.now() - 4 * 86400000).toISOString(), height: 3.4, cap_diameter: 2.3, moisture_level: 87, primordia_density: 7 },
+        { batch_id: "BATCH-001", date: new Date(Date.now() - 3 * 86400000).toISOString(), height: 4.8, cap_diameter: 3.5, moisture_level: 89, primordia_density: 7 },
+        { batch_id: "BATCH-001", date: new Date(Date.now() - 2 * 86400000).toISOString(), height: 6.2, cap_diameter: 4.6, moisture_level: 88, primordia_density: 6 },
+        { batch_id: "BATCH-001", date: new Date(Date.now() - 1 * 86400000).toISOString(), height: 7.5, cap_diameter: 5.4, moisture_level: 90, primordia_density: 6 },
+        { batch_id: "BATCH-001", date: new Date().toISOString(), height: 8.4, cap_diameter: 6.1, moisture_level: 89, primordia_density: 6 },
+      ];
+
+      for (const l of sampleLogs) {
+        await supabase.from("daily_growth_logs").insert(l);
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["growth-batches"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-growth-logs"] });
+
+      // Log in system logs
+      logSystemActivity({
+        source: "BATCH",
+        category: "crud",
+        severity: "success",
+        action: "SEED_BATCHES",
+        message: "Seeded sample oyster mushroom cultivation batches and daily growth curves",
+        details: "Loaded 4 batches (Inoculation to Harvest) and 7-day growth curve telemetry.",
+      });
+
+      toast.success("Sample Batches Seeded", {
+        description: "Populated 4 oyster mushroom batches and 7-day growth telemetry.",
+      });
+    } catch {
+      toast.error("Failed to seed sample batches.");
+    } finally {
+      setIsSeeding(false);
+    }
+  };
 
   // 1. TanStack Query: Fetch Batches from Supabase PostgreSQL
   const { data: batches = [] } = useQuery<GrowthBatch[]>({
@@ -295,6 +757,13 @@ export default function GrowthTrackingPage() {
 
   // Live stage update in database
   const handleUpdateStage = async (newStage: GrowthStage) => {
+    if (!canManageBatches) {
+      toast.error("Permission Denied", {
+        description: `Your role (${role.toUpperCase()}) cannot advance growth phases.`,
+      });
+      return;
+    }
+
     if (!selectedBatch) return;
     setIsUpdatingStage(true);
 
@@ -348,6 +817,39 @@ export default function GrowthTrackingPage() {
         supertitle="Cultivation"
         title="Growth Tracking"
         subtitle="Live tracking of oyster mushroom bag batches, incubation rates, growth metrics, and harvest yields directly from the database."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {isViewer && (
+              <Badge variant="outline" className="text-[10px] bg-muted/40 font-mono text-muted-foreground border-border/60">
+                Read-Only ({role.toUpperCase()})
+              </Badge>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (batches.length > 0) setMeasBatchId(batches[0].id);
+                setIsLogMeasurementOpen(true);
+              }}
+              disabled={batches.length === 0 || !canControlDevices}
+              className="h-8 text-xs gap-1.5"
+            >
+              <PlusCircle className="size-3.5" />
+              Log Growth
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={() => setIsAddBatchOpen(true)}
+              disabled={!canManageBatches}
+              className="h-8 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+            >
+              <Plus className="size-3.5" />
+              New Batch
+            </Button>
+          </div>
+        }
       />
 
       {/* Metric Cards */}
@@ -833,7 +1335,7 @@ export default function GrowthTrackingPage() {
                               className={cn(
                                 "font-mono font-bold",
                                 batch.healthScore >= 90
-                                  ? "text-emerald-400"
+                                   ? "text-emerald-400"
                                   : batch.healthScore >= 80
                                   ? "text-amber-400"
                                   : "text-rose-400"
@@ -893,137 +1395,616 @@ export default function GrowthTrackingPage() {
         </CardContent>
       </Card>
 
-      {/* Right-Side Sheet Drawer: Batch Cultivation Details */}
-      <Sheet open={!!selectedBatch} onOpenChange={(open) => !open && setSelectedBatch(null)}>
-        <SheetContent
-          side="right"
-          className="w-full sm:max-w-md bg-card border-border p-6 overflow-y-auto z-50 flex flex-col gap-6"
-        >
-          <SheetHeader className="p-0 text-left space-y-1">
-            <SheetTitle className="text-lg font-bold text-foreground">
-              Cultivation Batch Profile
-            </SheetTitle>
-            <SheetDescription className="text-xs text-muted-foreground">
-              Detailed biological parameters, growth phase progress, and substrate metadata from database.
-            </SheetDescription>
-          </SheetHeader>
+      {/* Centered Modal Dialog: Batch Cultivation Details & Profile (2-Column Layout) */}
+      <Dialog open={!!selectedBatch} onOpenChange={(open) => !open && setSelectedBatch(null)}>
+        <DialogContent className="sm:max-w-2xl lg:max-w-3xl p-6" showCloseButton={false}>
+          <DialogHeader className="pb-3 border-b border-border/40 text-left">
+            <DialogTitle className="text-base font-bold flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Sprout className="size-4 text-primary" />
+                Cultivation Batch Profile
+              </span>
+              {selectedBatch && (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-[10px] font-bold uppercase tracking-wider border",
+                    STAGE_COLORS[selectedBatch.currentStage]?.bg,
+                    STAGE_COLORS[selectedBatch.currentStage]?.text
+                  )}
+                >
+                  {selectedBatch.currentStage}
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Biological parameters, growth phase telemetry, and substrate metadata.
+            </DialogDescription>
+          </DialogHeader>
 
           {selectedBatch && (
-            <div className="space-y-6 animate-in fade-in-50 slide-in-from-right-4 duration-300 fill-mode-both">
-              {/* Batch Banner Card */}
-              <div className="flex items-center gap-3.5 p-4 rounded-2xl bg-muted/30 border border-border/70 shadow-xs">
-                <div className="size-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                  <Sprout className="size-6" />
-                </div>
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2 text-xs">
+              {/* Column 1: Identity Banner, Substrate, Notes */}
+              <div className="space-y-3 flex flex-col justify-between">
+                {/* Batch Banner Card */}
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/20 border border-border/70">
+                  <div className="size-11 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                    <Sprout className="size-5" />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-0.5">
                     <p className="text-sm font-bold text-foreground truncate">{selectedBatch.batchName}</p>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "text-[9px] font-bold uppercase tracking-wider border",
-                        STAGE_COLORS[selectedBatch.currentStage]?.bg,
-                        STAGE_COLORS[selectedBatch.currentStage]?.text
-                      )}
-                    >
-                      {selectedBatch.currentStage}
-                    </Badge>
+                    <p className="text-xs text-muted-foreground font-mono truncate">{selectedBatch.variety}</p>
+                    <p className="text-[10px] text-muted-foreground/70 font-mono">ID: {selectedBatch.id}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground font-mono truncate">{selectedBatch.variety}</p>
-                  <p className="text-[10px] text-muted-foreground/70 font-mono truncate">ID: {selectedBatch.id}</p>
                 </div>
-              </div>
 
-              {/* 2x2 Quick Metadata Stats Grid */}
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3 rounded-xl bg-muted/20 border border-border/50 space-y-1 transition-all hover:bg-muted/30">
-                  <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1">
-                    <MapPin className="size-3 text-primary" /> Location Zone
-                  </span>
-                  <p className="font-semibold text-foreground">{selectedBatch.zone}</p>
-                </div>
-                <div className="p-3 rounded-xl bg-muted/20 border border-border/50 space-y-1 transition-all hover:bg-muted/30">
-                  <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1">
-                    <Heart className="size-3 text-rose-400" /> Health Rating
-                  </span>
-                  <p className="font-semibold text-foreground font-mono">{selectedBatch.healthScore}% Optimal</p>
-                </div>
-                <div className="p-3 rounded-xl bg-muted/20 border border-border/50 space-y-1 transition-all hover:bg-muted/30">
-                  <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1">
-                    <TrendingUp className="size-3 text-sky-400" /> Timeline Progress
-                  </span>
-                  <p className="font-semibold text-foreground font-mono">
-                    {selectedBatch.progress}% ({selectedBatch.daysSinceStart} days)
+                {/* Substrate & Colonization Details */}
+                <div className="space-y-2 p-3 rounded-xl bg-muted/20 border border-border/60">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                    <Leaf className="size-3.5 text-primary" /> Substrate Composition
+                  </h4>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {selectedBatch.substrate}
                   </p>
+                  <div className="pt-2 border-t border-border/40 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+                    <div>
+                      <span className="font-semibold text-foreground">Inoculation:</span>{" "}
+                      <p className="font-mono mt-0.5">{selectedBatch.startDate}</p>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-foreground">Est. Harvest:</span>{" "}
+                      <p className="font-mono mt-0.5">{selectedBatch.estimatedHarvestDate}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="p-3 rounded-xl bg-muted/20 border border-border/50 space-y-1 transition-all hover:bg-muted/30">
-                  <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1">
-                    <Scale className="size-3 text-emerald-400" /> Harvested Yield
-                  </span>
-                  <p className="font-semibold text-foreground font-mono">
-                    {selectedBatch.yield != null ? `${selectedBatch.yield}g` : `~${selectedBatch.expectedYield}g est.`}
+
+                {/* Observations / Notes */}
+                <div className="p-3 rounded-xl bg-muted/10 border border-border/40 flex-1 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider">Observations / Notes</span>
+                  <p className="text-xs text-foreground/80 mt-1 italic">
+                    {selectedBatch.notes ? `"${selectedBatch.notes}"` : "No special observations recorded."}
                   </p>
                 </div>
               </div>
 
-              {/* Substrate & Colonization Details */}
-              <div className="space-y-3 p-4 rounded-2xl bg-muted/20 border border-border/60 text-xs">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                  <Leaf className="size-3.5 text-primary" /> Substrate Composition
-                </h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {selectedBatch.substrate}
-                </p>
-                <div className="pt-2 border-t border-border/50 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-                  <div>
-                    <span className="font-semibold text-foreground">Inoculation Date:</span>{" "}
-                    <p className="font-mono mt-0.5">{selectedBatch.startDate}</p>
+              {/* Column 2: 2x2 Metric Grid & Advance Phase Action */}
+              <div className="space-y-3 flex flex-col justify-between">
+                {/* 2x2 Quick Metadata Stats Grid */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="p-3 rounded-xl bg-muted/20 border border-border/50 space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1">
+                      <MapPin className="size-3 text-primary" /> Location Zone
+                    </span>
+                    <p className="font-semibold text-foreground truncate">{selectedBatch.zone}</p>
                   </div>
-                  <div>
-                    <span className="font-semibold text-foreground">Est. Harvest:</span>{" "}
-                    <p className="font-mono mt-0.5">{selectedBatch.estimatedHarvestDate}</p>
+                  <div className="p-3 rounded-xl bg-muted/20 border border-border/50 space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1">
+                      <Heart className="size-3 text-rose-400" /> Health Rating
+                    </span>
+                    <p className="font-semibold text-foreground font-mono">{selectedBatch.healthScore}% Optimal</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-muted/20 border border-border/50 space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1">
+                      <TrendingUp className="size-3 text-sky-400" /> Progress
+                    </span>
+                    <p className="font-semibold text-foreground font-mono">
+                      {selectedBatch.progress}% ({selectedBatch.daysSinceStart}d)
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-muted/20 border border-border/50 space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1">
+                      <Scale className="size-3 text-emerald-400" /> Harvest Yield
+                    </span>
+                    <p className="font-semibold text-foreground font-mono">
+                      {selectedBatch.yield != null ? `${selectedBatch.yield}g` : `~${selectedBatch.expectedYield}g est.`}
+                    </p>
                   </div>
                 </div>
-              </div>
 
-              {/* Action: Update Growth Stage in Supabase */}
-              <div className="space-y-3 pt-2 border-t border-border/60">
-                <Label className="text-xs font-semibold">Advance Growth Phase (Live Database)</Label>
-                <Select
-                  value={selectedBatch.currentStage}
-                  disabled={isUpdatingStage}
-                  onValueChange={(v) => handleUpdateStage(v as GrowthStage)}
-                >
-                  <SelectTrigger className="h-9 text-xs bg-card border-border">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-border bg-popover p-1 shadow-xl">
-                    <SelectItem value="inoculation" className="text-xs py-2 rounded-lg cursor-pointer">Inoculation</SelectItem>
-                    <SelectItem value="incubation" className="text-xs py-2 rounded-lg cursor-pointer">Incubation</SelectItem>
-                    <SelectItem value="primordia" className="text-xs py-2 rounded-lg cursor-pointer">Primordia</SelectItem>
-                    <SelectItem value="fruiting" className="text-xs py-2 rounded-lg cursor-pointer">Fruiting</SelectItem>
-                    <SelectItem value="harvest" className="text-xs py-2 rounded-lg cursor-pointer">Harvest</SelectItem>
-                    <SelectItem value="completed" className="text-xs py-2 rounded-lg cursor-pointer">Completed</SelectItem>
-                  </SelectContent>
-                </Select>
-                {isUpdatingStage && (
-                  <p className="text-[11px] text-primary flex items-center gap-1.5">
-                    <Loader2 className="size-3 animate-spin" /> Saving changes to database...
-                  </p>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setSelectedBatch(null)}
-                  className="w-full h-10 rounded-xl text-xs font-semibold cursor-pointer mt-2"
-                >
-                  Close Profile
-                </Button>
+                {/* Advance Growth Phase */}
+                <div className="space-y-2 p-3.5 rounded-xl bg-muted/20 border border-border/60">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold">Advance Growth Phase (Live)</Label>
+                    {isUpdatingStage && (
+                      <span className="text-[11px] text-primary flex items-center gap-1">
+                        <Loader2 className="size-3 animate-spin" /> Saving...
+                      </span>
+                    )}
+                  </div>
+                  <Select
+                    value={selectedBatch.currentStage}
+                    disabled={!canManageBatches || isUpdatingStage}
+                    onValueChange={(v) => handleUpdateStage(v as GrowthStage)}
+                  >
+                    <SelectTrigger className="h-9 text-xs bg-card border-border">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="inoculation">Inoculation</SelectItem>
+                      <SelectItem value="incubation">Incubation</SelectItem>
+                      <SelectItem value="primordia">Primordia (Pinhead)</SelectItem>
+                      <SelectItem value="fruiting">Fruiting Body</SelectItem>
+                      <SelectItem value="harvest">Harvest</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
           )}
-        </SheetContent>
-      </Sheet>
+
+          <DialogFooter className="border-t border-border/40 pt-3 flex items-center justify-between sm:justify-between w-full">
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={!isAdmin && !canManageBatches}
+              onClick={() => {
+                if (selectedBatch) {
+                  setBatchToDelete(selectedBatch);
+                  setIsDeleteDialogOpen(true);
+                }
+              }}
+              className="text-xs gap-1.5"
+            >
+              <Trash2 className="size-3.5" />
+              Delete
+            </Button>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canManageBatches}
+                onClick={() => {
+                  if (selectedBatch) {
+                    openEditModal(selectedBatch);
+                  }
+                }}
+                className="text-xs gap-1.5"
+              >
+                <Pencil className="size-3.5" />
+                Edit
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedBatch(null)}
+                className="text-xs"
+              >
+                Close
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Edit Batch Parameters (Update) */}
+      <Dialog open={isEditBatchOpen} onOpenChange={setIsEditBatchOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader className="pb-3 border-b border-border/40">
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <Pencil className="size-4 text-primary" />
+              Edit Cultivation Batch
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Modify growth metrics, target yields, and variety metadata for {editBatchName}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-3 space-y-3.5 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Batch Name / Identifier</Label>
+              <Input
+                value={editBatchName}
+                onChange={(e) => setEditBatchName(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Oyster Variety</Label>
+                <Select value={editVariety} onValueChange={setEditVariety}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Pearl Oyster (Pleurotus ostreatus)">Pearl Oyster</SelectItem>
+                    <SelectItem value="Blue Oyster (Pleurotus columbinus)">Blue Oyster</SelectItem>
+                    <SelectItem value="Pink Oyster (Pleurotus djamor)">Pink Oyster</SelectItem>
+                    <SelectItem value="King Oyster (Pleurotus eryngii)">King Oyster</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Substrate Mix</Label>
+                <Select value={editSubstrate} onValueChange={setEditSubstrate}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Rice Straw + Sawdust Mix">Rice Straw + Sawdust Mix</SelectItem>
+                    <SelectItem value="Wheat Straw">Wheat Straw</SelectItem>
+                    <SelectItem value="Coconut Coir + Rice Bran">Coconut Coir + Rice Bran</SelectItem>
+                    <SelectItem value="Coffee Grounds + Sawdust">Coffee Grounds + Sawdust</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Greenhouse Zone</Label>
+                <Select value={editZone} onValueChange={setEditZone}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Fruiting Bay - Zone A">Fruiting Bay - Zone A</SelectItem>
+                    <SelectItem value="Fruiting Bay - Zone B">Fruiting Bay - Zone B</SelectItem>
+                    <SelectItem value="Incubation Room">Incubation Room</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Growth Phase</Label>
+                <Select value={editStage} onValueChange={(v) => setEditStage(v as GrowthStage)}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inoculation">Inoculation</SelectItem>
+                    <SelectItem value="incubation">Incubation</SelectItem>
+                    <SelectItem value="primordia">Primordia</SelectItem>
+                    <SelectItem value="fruiting">Fruiting</SelectItem>
+                    <SelectItem value="harvest">Harvest</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Progress (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={editProgress}
+                  onChange={(e) => setEditProgress(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Health Score (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={editHealthScore}
+                  onChange={(e) => setEditHealthScore(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Harvested Yield (g)</Label>
+                <Input
+                  type="number"
+                  value={editYield}
+                  onChange={(e) => setEditYield(e.target.value)}
+                  placeholder="Leave empty if active"
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Expected Yield (g)</Label>
+                <Input
+                  type="number"
+                  value={editExpectedYield}
+                  onChange={(e) => setEditExpectedYield(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Cultivation Notes</Label>
+              <Input
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                placeholder="Observations, anomalies, flushes..."
+                className="h-9 text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-border/40 pt-3">
+            <Button variant="outline" size="sm" onClick={() => setIsEditBatchOpen(false)} className="text-xs">
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleEditBatch}
+              disabled={isSubmittingEdit}
+              className="text-xs bg-primary text-primary-foreground font-semibold"
+            >
+              {isSubmittingEdit ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Delete Batch Confirmation (Delete) */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-base font-bold text-destructive flex items-center gap-2">
+              <AlertTriangle className="size-4 text-destructive" />
+              Delete Cultivation Batch?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground pt-1">
+              Are you sure you want to delete <strong className="text-foreground">{batchToDelete?.batchName}</strong> ({batchToDelete?.id})? This will permanently remove the batch and its daily growth measurements.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="border-t border-border/40 pt-3 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setBatchToDelete(null);
+              }}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteBatch}
+              disabled={isSubmittingDelete}
+              className="text-xs font-semibold"
+            >
+              {isSubmittingDelete ? "Deleting..." : "Delete Batch"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Create New Batch */}
+      <Dialog open={isAddBatchOpen} onOpenChange={setIsAddBatchOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader className="pb-3 border-b border-border/40">
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <Sprout className="size-4 text-primary" />
+              Register New Cultivation Batch
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Add a new oyster mushroom substrate batch into the SmartGrow database.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-3 space-y-3.5 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Batch Name / Identifier</Label>
+              <Input
+                value={batchName}
+                onChange={(e) => setBatchName(e.target.value)}
+                placeholder="e.g. Batch #01 — Pearl Oyster"
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Oyster Variety</Label>
+                <Select value={variety} onValueChange={setVariety}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Pearl Oyster (Pleurotus ostreatus)">Pearl Oyster</SelectItem>
+                    <SelectItem value="Blue Oyster (Pleurotus columbinus)">Blue Oyster</SelectItem>
+                    <SelectItem value="Pink Oyster (Pleurotus djamor)">Pink Oyster</SelectItem>
+                    <SelectItem value="King Oyster (Pleurotus eryngii)">King Oyster</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Substrate Mix</Label>
+                <Select value={substrate} onValueChange={setSubstrate}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Rice Straw + Sawdust Mix">Rice Straw + Sawdust Mix</SelectItem>
+                    <SelectItem value="Wheat Straw">Wheat Straw</SelectItem>
+                    <SelectItem value="Coconut Coir + Rice Bran">Coconut Coir + Rice Bran</SelectItem>
+                    <SelectItem value="Coffee Grounds + Sawdust">Coffee Grounds + Sawdust</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Greenhouse Zone</Label>
+                <Select value={zone} onValueChange={setZone}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Fruiting Bay - Zone A">Fruiting Bay - Zone A</SelectItem>
+                    <SelectItem value="Fruiting Bay - Zone B">Fruiting Bay - Zone B</SelectItem>
+                    <SelectItem value="Incubation Room">Incubation Room</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Initial Stage</Label>
+                <Select value={currentStage} onValueChange={(v) => setCurrentStage(v as GrowthStage)}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inoculation">Inoculation</SelectItem>
+                    <SelectItem value="incubation">Incubation</SelectItem>
+                    <SelectItem value="primordia">Primordia (Pinhead)</SelectItem>
+                    <SelectItem value="fruiting">Fruiting Body</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Expected Yield (Grams)</Label>
+              <Input
+                type="number"
+                value={expectedYield}
+                onChange={(e) => setExpectedYield(e.target.value)}
+                placeholder="1000"
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Cultivation Notes</Label>
+              <Input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Bag preparation, moisture, or inoculation observations..."
+                className="h-9 text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-border/40 pt-3">
+            <Button variant="outline" size="sm" onClick={() => setIsAddBatchOpen(false)} className="text-xs">
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleAddBatch}
+              disabled={isSubmittingBatch}
+              className="text-xs bg-primary text-primary-foreground font-semibold"
+            >
+              {isSubmittingBatch ? "Saving..." : "Create Batch"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Record Daily Measurement */}
+      <Dialog open={isLogMeasurementOpen} onOpenChange={setIsLogMeasurementOpen}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader className="pb-3 border-b border-border/40">
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <PlusCircle className="size-4 text-primary" />
+              Record Daily Growth Measurement
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Input caliper and ruler telemetry for active oyster mushroom crops.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-3 space-y-3.5 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Target Batch</Label>
+              <Select value={measBatchId} onValueChange={setMeasBatchId}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Select active batch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {batches.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.batchName} ({b.id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Stalk Height (cm)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={measHeight}
+                  onChange={(e) => setMeasHeight(e.target.value)}
+                  placeholder="4.5"
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Cap Diameter (cm)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={measCapDiameter}
+                  onChange={(e) => setMeasCapDiameter(e.target.value)}
+                  placeholder="3.2"
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Substrate Moisture (%)</Label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  value={measMoisture}
+                  onChange={(e) => setMeasMoisture(e.target.value)}
+                  placeholder="86.0"
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Pinhead Density (per cluster)</Label>
+                <Input
+                  type="number"
+                  value={measPins}
+                  onChange={(e) => setMeasPins(e.target.value)}
+                  placeholder="8"
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-border/40 pt-3">
+            <Button variant="outline" size="sm" onClick={() => setIsLogMeasurementOpen(false)} className="text-xs">
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleLogMeasurement}
+              disabled={isSubmittingLog}
+              className="text-xs bg-primary text-primary-foreground font-semibold"
+            >
+              {isSubmittingLog ? "Saving..." : "Save Measurement"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

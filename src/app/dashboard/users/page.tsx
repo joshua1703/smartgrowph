@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { PageHeader } from "@/components/dashboard/page-header";
+import { logSystemActivity } from "@/lib/audit-logger";
 import { ROLE_CONFIG, STATUS_CONFIG } from "@/data/users";
 import {
   Card,
@@ -348,12 +349,23 @@ export default function UsersPage() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["users-list"] });
+      const targetName = selectedUser?.fullName || "User";
       toast.success(
-        `Updated ${selectedUser?.fullName || "User"}'s permissions to ${variables.role.toUpperCase()}`
+        `Updated ${targetName}'s permissions to ${variables.role.toUpperCase()}`
       );
       if (selectedUser) {
         setSelectedUser((prev) => prev ? { ...prev, role: variables.role, zone: variables.zone } : null);
       }
+
+      // Log to System Logs
+      logSystemActivity({
+        source: "USER_MGMT",
+        category: "crud",
+        severity: "info",
+        action: "UPDATE_ROLE",
+        message: `Updated permissions for '${targetName}' to ${variables.role.toUpperCase()}`,
+        details: `Zone assigned: ${variables.zone}`,
+      });
     },
     onError: (err: unknown) => {
       console.error(err);
@@ -376,8 +388,20 @@ export default function UsersPage() {
       }
     },
     onSuccess: () => {
+      const deletedName = deletingUser?.fullName || "User";
       queryClient.invalidateQueries({ queryKey: ["users-list"] });
-      toast.success(`User ${deletingUser?.fullName || ""} has been permanently deleted.`);
+      toast.success(`User ${deletedName} has been permanently deleted.`);
+
+      // Log to System Logs
+      logSystemActivity({
+        source: "USER_MGMT",
+        category: "crud",
+        severity: "warning",
+        action: "DELETE_USER",
+        message: `Deleted user account '${deletedName}'`,
+        details: `Email: ${deletingUser?.email || "N/A"}. Access revoked.`,
+      });
+
       setDeletingUser(null);
       setSelectedUser(null);
       setDeleteConfirmText("");

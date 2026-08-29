@@ -15,6 +15,7 @@ import {
   Cpu,
   MoreVertical,
   UserCircle2,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -44,6 +45,7 @@ const navItems: NavItem[] = [
   { label: "IoT Control", icon: Cpu, href: "/dashboard/iot-control" },
   { label: "Sensor Readings", icon: Thermometer, href: "/dashboard/sensor-readings", section: "Monitoring" },
   { label: "Actuator Logs", icon: Fan, href: "/dashboard/actuator-logs" },
+  { label: "System Logs", icon: Bell, href: "/dashboard/system-logs" },
   { label: "Growth Tracking", icon: Sprout, href: "/dashboard/growth-tracking", section: "Cultivation" },
   { label: "Users", icon: Users, href: "/dashboard/users", section: "Administration" },
 ];
@@ -237,7 +239,7 @@ export function SidebarContent({ collapsed = false, onItemClick }: { collapsed?:
               )}
             >
               <div className="relative shrink-0">
-                <Avatar className="size-8 shrink-0 border border-border">
+                <Avatar className="size-9 shrink-0 rounded-full border border-border">
                   {user?.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -246,12 +248,12 @@ export function SidebarContent({ collapsed = false, onItemClick }: { collapsed?:
                       className="size-full object-cover rounded-full"
                     />
                   ) : (
-                    <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-[9px] font-bold text-white">
+                    <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-[10px] font-bold text-white">
                       {user?.firstName ? user.firstName.slice(0, 2).toUpperCase() : "SG"}
                     </AvatarFallback>
                   )}
                 </Avatar>
-                <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full border-2 border-sidebar bg-emerald-500 animate-pulse" />
+                <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 ring-2 ring-card shadow-xs" />
               </div>
               {!collapsed && (
                 <>

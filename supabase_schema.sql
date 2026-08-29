@@ -152,6 +152,22 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- J. SYSTEM & AUDIT LOGS (Logins, CRUD operations, Automations, Alerts, and User Management)
+CREATE TABLE IF NOT EXISTS public.system_logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES public.users(id) ON DELETE SET NULL,
+  user_name TEXT,
+  source TEXT NOT NULL,
+  category TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('info', 'warning', 'critical', 'success')),
+  action TEXT NOT NULL,
+  message TEXT NOT NULL,
+  details TEXT,
+  zone TEXT DEFAULT 'Fruiting Bay',
+  metadata JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ============================================================================
 -- 3. CLERK JWT & AUTH HELPER FUNCTIONS (Defined after tables exist)
 -- ============================================================================
@@ -247,6 +263,7 @@ DROP POLICY IF EXISTS "Users or Admins can delete batches" ON public.growth_batc
 DROP POLICY IF EXISTS "Allow create growth batches" ON public.growth_batches;
 DROP POLICY IF EXISTS "Allow update growth batches" ON public.growth_batches;
 DROP POLICY IF EXISTS "Allow delete growth batches" ON public.growth_batches;
+DROP POLICY IF EXISTS "Manage growth batches" ON public.growth_batches;
 
 DROP POLICY IF EXISTS "View daily growth logs" ON public.daily_growth_logs;
 DROP POLICY IF EXISTS "Authenticated users can insert daily growth logs" ON public.daily_growth_logs;
@@ -254,6 +271,11 @@ DROP POLICY IF EXISTS "Authenticated users can update daily growth logs" ON publ
 DROP POLICY IF EXISTS "Allow insert daily growth logs" ON public.daily_growth_logs;
 DROP POLICY IF EXISTS "Allow update daily growth logs" ON public.daily_growth_logs;
 DROP POLICY IF EXISTS "Allow delete daily growth logs" ON public.daily_growth_logs;
+DROP POLICY IF EXISTS "Manage daily growth logs" ON public.daily_growth_logs;
+
+DROP POLICY IF EXISTS "View system logs" ON public.system_logs;
+DROP POLICY IF EXISTS "Insert system logs" ON public.system_logs;
+DROP POLICY IF EXISTS "Manage system logs" ON public.system_logs;
 
 DROP POLICY IF EXISTS "View actuators" ON public.actuators;
 DROP POLICY IF EXISTS "Control actuators" ON public.actuators;
@@ -296,42 +318,18 @@ CREATE POLICY "Allow sensor telemetry insertion" ON public.sensor_readings
 -- ----------------------------------------------------------------------------
 -- GROWTH BATCHES POLICIES
 -- ----------------------------------------------------------------------------
-CREATE POLICY "View growth batches" ON public.growth_batches
-  FOR SELECT TO authenticated, anon
-  USING (true);
-
-CREATE POLICY "Allow create growth batches" ON public.growth_batches
-  FOR INSERT TO authenticated, anon
-  WITH CHECK (true);
-
-CREATE POLICY "Allow update growth batches" ON public.growth_batches
-  FOR UPDATE TO authenticated, anon
+CREATE POLICY "Manage growth batches" ON public.growth_batches
+  FOR ALL TO authenticated, anon
   USING (true)
   WITH CHECK (true);
-
-CREATE POLICY "Allow delete growth batches" ON public.growth_batches
-  FOR DELETE TO authenticated, anon
-  USING (true);
 
 -- ----------------------------------------------------------------------------
 -- DAILY GROWTH LOGS POLICIES
 -- ----------------------------------------------------------------------------
-CREATE POLICY "View daily growth logs" ON public.daily_growth_logs
-  FOR SELECT TO authenticated, anon
-  USING (true);
-
-CREATE POLICY "Allow insert daily growth logs" ON public.daily_growth_logs
-  FOR INSERT TO authenticated, anon
-  WITH CHECK (true);
-
-CREATE POLICY "Allow update daily growth logs" ON public.daily_growth_logs
-  FOR UPDATE TO authenticated, anon
+CREATE POLICY "Manage daily growth logs" ON public.daily_growth_logs
+  FOR ALL TO authenticated, anon
   USING (true)
   WITH CHECK (true);
-
-CREATE POLICY "Allow delete daily growth logs" ON public.daily_growth_logs
-  FOR DELETE TO authenticated, anon
-  USING (true);
 
 -- ----------------------------------------------------------------------------
 -- ACTUATORS & ACTUATOR LOGS POLICIES
@@ -387,6 +385,17 @@ CREATE POLICY "View system settings" ON public.system_settings
 CREATE POLICY "Update system settings" ON public.system_settings
   FOR ALL TO authenticated, anon
   USING (true)
+  WITH CHECK (true);
+
+-- ----------------------------------------------------------------------------
+-- SYSTEM LOGS POLICIES
+-- ----------------------------------------------------------------------------
+CREATE POLICY "View system logs" ON public.system_logs
+  FOR SELECT TO authenticated, anon
+  USING (true);
+
+CREATE POLICY "Insert system logs" ON public.system_logs
+  FOR INSERT TO authenticated, anon
   WITH CHECK (true);
 
 -- ============================================================================

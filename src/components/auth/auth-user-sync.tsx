@@ -102,6 +102,19 @@ export function AuthUserSync() {
     if (!hasSyncedRef.current) {
       hasSyncedRef.current = true;
       triggerSyncAndCheck();
+
+      // Log login event in system logs
+      import("@/lib/audit-logger").then(({ logSystemActivity }) => {
+        logSystemActivity({
+          source: "AUTH",
+          category: "auth",
+          severity: "success",
+          action: "LOGIN",
+          message: `User logged into SmartGrow Dashboard`,
+          details: `User ID: ${userId}. Session synchronized.`,
+          userId,
+        });
+      }).catch(() => {});
     }
 
     // Periodic heartbeat & existence verification every 15s

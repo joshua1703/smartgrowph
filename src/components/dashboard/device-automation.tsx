@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useUserRole } from "@/lib/use-user-role";
+import { logSystemActivity } from "@/lib/audit-logger";
 
 export function DeviceAutomation() {
   const queryClient = useQueryClient();
@@ -120,6 +121,16 @@ export function DeviceAutomation() {
 
       queryClient.invalidateQueries({ queryKey: ["device-automations"] });
 
+      // Log to System Logs
+      logSystemActivity({
+        source: "AUTOMATION",
+        category: "crud",
+        severity: "info",
+        action: nextEnabled ? "ENABLE_RULE" : "DISABLE_RULE",
+        message: `${nextEnabled ? "Enabled" : "Disabled"} automation rule '${name}'`,
+        details: `Rule ID: ${id}`,
+      });
+
       if (nextEnabled) {
         toast.success("Automation Rule Enabled", {
           description: `Auto-trigger active: ${name}`,
@@ -160,6 +171,17 @@ export function DeviceAutomation() {
       }
 
       queryClient.invalidateQueries({ queryKey: ["device-automations"] });
+
+      // Log to System Logs
+      logSystemActivity({
+        source: "AUTOMATION",
+        category: "crud",
+        severity: "warning",
+        action: "DELETE_RULE",
+        message: `Deleted automation rule '${name}'`,
+        details: `Removed rule from database.`,
+      });
+
       toast.error("Automation Rule Removed", {
         description: `Rule '${name}' has been deleted from database.`,
       });
@@ -203,6 +225,17 @@ export function DeviceAutomation() {
       }
 
       queryClient.invalidateQueries({ queryKey: ["device-automations"] });
+
+      // Log to System Logs
+      logSystemActivity({
+        source: "AUTOMATION",
+        category: "crud",
+        severity: "success",
+        action: "CREATE_RULE",
+        message: `Created automation rule '${ruleName}'`,
+        details: `Trigger ${newActuator} when ${newSensor} ${newCondition} ${thresholdVal}`,
+      });
+
       toast.success("New Automation Rule Saved", {
         description: `Trigger ${newActuator} when ${newSensor} ${newCondition} ${thresholdVal}`,
       });

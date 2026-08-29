@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useUserRole } from "@/lib/use-user-role";
+import { logSystemActivity } from "@/lib/audit-logger";
 
 export function DeviceSchedules() {
   const queryClient = useQueryClient();
@@ -120,6 +121,16 @@ export function DeviceSchedules() {
 
       queryClient.invalidateQueries({ queryKey: ["device-schedules"] });
 
+      // Log to System Logs
+      logSystemActivity({
+        source: "SCHEDULE",
+        category: "crud",
+        severity: "info",
+        action: nextActive ? "ACTIVATE_SCHEDULE" : "PAUSE_SCHEDULE",
+        message: `${nextActive ? "Activated" : "Paused"} timer schedule for ${device}`,
+        details: `Start time: ${time}. Schedule ID: ${id}`,
+      });
+
       if (nextActive) {
         toast.success("Schedule Activated", {
           description: `${device} timer active at ${time}.`,
@@ -160,6 +171,17 @@ export function DeviceSchedules() {
       }
 
       queryClient.invalidateQueries({ queryKey: ["device-schedules"] });
+
+      // Log to System Logs
+      logSystemActivity({
+        source: "SCHEDULE",
+        category: "crud",
+        severity: "warning",
+        action: "DELETE_SCHEDULE",
+        message: `Deleted schedule for ${device}`,
+        details: `Removed timer from database.`,
+      });
+
       toast.error("Schedule Removed", {
         description: `Schedule for ${device} has been removed from database.`,
       });
@@ -205,6 +227,17 @@ export function DeviceSchedules() {
       }
 
       queryClient.invalidateQueries({ queryKey: ["device-schedules"] });
+
+      // Log to System Logs
+      logSystemActivity({
+        source: "SCHEDULE",
+        category: "crud",
+        severity: "success",
+        action: "CREATE_SCHEDULE",
+        message: `Created scheduled action for ${newActuator}`,
+        details: `Scheduled at ${newTime} (${newDuration}, ${newDays})`,
+      });
+
       toast.success("New Schedule Created", {
         description: `${newActuator} scheduled for ${newTime} (${newDuration}, ${newDays})`,
       });

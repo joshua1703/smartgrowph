@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useUserRole } from "@/lib/use-user-role";
+import { logSystemActivity } from "@/lib/audit-logger";
 
 export function SystemSettings() {
   const queryClient = useQueryClient();
@@ -106,6 +107,16 @@ export function SystemSettings() {
 
       queryClient.invalidateQueries({ queryKey: ["system-settings"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-overview-metrics"] });
+
+      // Log to System Logs
+      logSystemActivity({
+        source: "SETTINGS",
+        category: "system",
+        severity: "info",
+        action: "UPDATE_SETTINGS",
+        message: `Updated greenhouse climate setpoints & polling`,
+        details: `Target Temp: ${tempTarget}°C, Target Humidity: ${humidityTarget}% RH, Polling: ${parseInt(interval) / 1000}s, Mode: ${autoMode ? "Autonomous" : "Manual Only"}`,
+      });
 
       toast.success("System Preferences Saved", {
         description: `Live polling set to ${parseInt(interval) / 1000}s. Target: ${tempTarget}°C & ${humidityTarget}% RH (${autoMode ? "Auto Control" : "Manual Only"}).`,

@@ -5,6 +5,7 @@ import { PanelLeft, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DashboardSidebar, SidebarContent } from "@/components/dashboard/dashboard-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationDropdown } from "@/components/dashboard/notification-dropdown";
 import { LiveToastStreamer } from "@/components/dashboard/live-toast-streamer";
 import { AutomationRunner } from "@/components/dashboard/automation-runner";
 import { AuthUserSync } from "@/components/auth/auth-user-sync";
@@ -77,7 +78,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               SmartGrow Dashboard
             </span>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-1.5">
+            <NotificationDropdown />
+            <ThemeToggle />
+          </div>
         </header>
 
         {/* ── Scrollable page content ── */}
