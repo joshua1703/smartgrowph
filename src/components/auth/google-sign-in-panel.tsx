@@ -32,18 +32,18 @@ function GoogleLogo({ className = "size-5" }: { className?: string }) {
 
 export function GoogleSignInPanel() {
   const router = useRouter();
-  const { isSignedIn, isLoaded: isAuthLoaded } = useAuth();
+  const { isSignedIn, isLoaded } = useAuth();
   const clerk = useClerk();
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // If already authenticated, automatically redirect to dashboard
+  // If already authenticated, immediately redirect to dashboard
   useEffect(() => {
-    if (isAuthLoaded && isSignedIn) {
+    if (isLoaded && (isSignedIn || clerk.session)) {
       router.replace("/dashboard");
     }
-  }, [isAuthLoaded, isSignedIn, router]);
+  }, [isLoaded, isSignedIn, clerk.session, router]);
 
   const handleGoogleAuth = async () => {
     if (typeof window !== "undefined" && !window.navigator.onLine) {
@@ -51,20 +51,38 @@ export function GoogleSignInPanel() {
       return;
     }
 
-    if (!isAuthLoaded || !clerk.loaded || !clerk.client) return;
+    if (!isLoaded || !clerk.loaded) return;
+
+    // If already signed in, simply navigate to dashboard
+    if (isSignedIn || clerk.session) {
+      router.replace("/dashboard");
+      return;
+    }
 
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
-      await clerk.client.signIn.authenticateWithRedirect({
-        strategy: "oauth_google",
-        redirectUrl: "/sso-callback",
-        redirectUrlComplete: "/dashboard",
-      });
+      if (clerk.client?.signIn) {
+        await clerk.client.signIn.authenticateWithRedirect({
+          strategy: "oauth_google",
+          redirectUrl: "/sso-callback",
+          redirectUrlComplete: "/dashboard",
+        });
+      }
     } catch (err: unknown) {
-      // Fallback: If user needs signup
-      if (clerk.client.signUp) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const isAlreadySignedIn =
+        errMsg.toLowerCase().includes("already signed in") ||
+        errMsg.toLowerCase().includes("session_exists");
+
+      if (isAlreadySignedIn) {
+        router.replace("/dashboard");
+        return;
+      }
+
+      // Fallback: Try sign-up if sign-in failed
+      if (clerk.client?.signUp) {
         try {
           await clerk.client.signUp.authenticateWithRedirect({
             strategy: "oauth_google",
@@ -73,6 +91,15 @@ export function GoogleSignInPanel() {
           });
           return;
         } catch (signupErr: unknown) {
+          const signupErrMsg =
+            signupErr instanceof Error ? signupErr.message : String(signupErr);
+          if (
+            signupErrMsg.toLowerCase().includes("already signed in") ||
+            signupErrMsg.toLowerCase().includes("session_exists")
+          ) {
+            router.replace("/dashboard");
+            return;
+          }
           console.error("Clerk signup fallback error:", signupErr);
         }
       }
@@ -114,7 +141,7 @@ export function GoogleSignInPanel() {
         <Button
           type="button"
           onClick={handleGoogleAuth}
-          disabled={isLoading || !isAuthLoaded || !clerk.loaded}
+          disabled={isLoading || !isLoaded || !clerk.loaded}
           className="relative flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-border/80 bg-muted/40 hover:bg-muted text-foreground font-semibold text-sm shadow-xs transition-all duration-200 hover:border-primary/40 hover:shadow-sm active:scale-[0.99] disabled:opacity-60 cursor-pointer"
         >
           {isLoading ? (

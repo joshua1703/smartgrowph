@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Fan, Droplets, CloudRain, Wind } from "lucide-react";
+import { Fan, Droplets, CloudRain, Wind, Lock } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -11,7 +11,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useUserRole } from "@/lib/use-user-role";
 
 const DEVICES = [
   { id: "fan", name: "Fan (Cooling)", icon: Fan, color: "text-sky-500", bg: "bg-sky-500/10" },
@@ -21,6 +23,7 @@ const DEVICES = [
 ];
 
 export function DeviceControl() {
+  const { canControlDevices, role, isViewer } = useUserRole();
   const [deviceState, setDeviceState] = useState<Record<string, boolean>>({
     fan: true,
     fogger: false,
@@ -29,6 +32,13 @@ export function DeviceControl() {
   });
 
   const toggleDevice = (id: string, name: string) => {
+    if (!canControlDevices) {
+      toast.error("Permission Denied", {
+        description: `Your account role is '${role.toUpperCase()}'. Manual actuator overrides require Operator, Technician, or Admin privileges.`,
+      });
+      return;
+    }
+
     const nextState = !deviceState[id];
     setDeviceState((prev) => ({
       ...prev,
@@ -48,13 +58,21 @@ export function DeviceControl() {
 
   return (
     <Card className="flex flex-col h-full">
-      <CardHeader>
-        <CardTitle className="text-lg font-bold tracking-tight text-foreground">
-          IoT Device Control
-        </CardTitle>
-        <CardDescription className="text-[11px] font-medium text-muted-foreground/60">
-          Manual override for actuators in the Oyster Mushroom greenhouse.
-        </CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <div>
+          <CardTitle className="text-lg font-bold tracking-tight text-foreground">
+            IoT Device Control
+          </CardTitle>
+          <CardDescription className="text-[11px] font-medium text-muted-foreground/60">
+            Manual override for actuators in the Oyster Mushroom greenhouse.
+          </CardDescription>
+        </div>
+        {isViewer && (
+          <Badge variant="outline" className="text-[10px] font-mono border-amber-500/30 text-amber-400 gap-1 bg-amber-500/10">
+            <Lock className="size-3" />
+            View-Only
+          </Badge>
+        )}
       </CardHeader>
       <CardContent className="flex-1 flex flex-col justify-center gap-4">
         {DEVICES.map((device) => {
@@ -89,7 +107,9 @@ export function DeviceControl() {
               </div>
               <Switch
                 checked={isActive}
+                disabled={!canControlDevices}
                 onCheckedChange={() => toggleDevice(device.id, device.name)}
+                className={!canControlDevices ? "cursor-not-allowed opacity-60" : "cursor-pointer"}
               />
             </div>
           );

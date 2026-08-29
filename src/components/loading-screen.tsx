@@ -18,14 +18,13 @@ export function LoadingScreen({
       <div className="pointer-events-none absolute -bottom-32 -right-32 size-96 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/15" />
 
       <div className="relative z-10 flex flex-col items-center space-y-6 text-center">
-        
         {/* ── Pulsing Brand Emblem with Sonar Waves ── */}
         <div className="relative flex size-20 items-center justify-center">
           {/* Outermost sonar wave */}
           <div className="absolute inset-0 rounded-3xl bg-emerald-500/20 animate-ping opacity-75" />
           {/* Inner ambient pulse */}
           <div className="absolute -inset-1 rounded-3xl bg-gradient-to-tr from-emerald-500 to-teal-500 opacity-30 blur-md animate-pulse" />
-          
+
           {/* Center Logo Badge */}
           <div className="relative flex size-16 items-center justify-center rounded-2xl bg-white dark:bg-zinc-900 p-2 shadow-xl border border-emerald-500/30">
             <BrandLogo size={48} priority className="size-11" />
@@ -42,17 +41,31 @@ export function LoadingScreen({
           </p>
         </div>
 
-        {/* ── Fluid Progress Bar Shimmer ── */}
-        <div className="relative h-1.5 w-48 overflow-hidden rounded-full bg-muted border border-border/60">
-          <div className="absolute inset-y-0 w-1/2 rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600 animate-[shimmer_1.5s_infinite_ease-in-out]" />
+        {/* ── macOS 3-Dots Wave Indicator ── */}
+        <div
+          role="status"
+          aria-label="Loading..."
+          className="flex items-center justify-center gap-2.5 py-1.5"
+        >
+          <span
+            className="size-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-[mac-dots_1.4s_infinite_ease-in-out]"
+            style={{ animationDelay: "0ms" }}
+          />
+          <span
+            className="size-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-[mac-dots_1.4s_infinite_ease-in-out]"
+            style={{ animationDelay: "180ms" }}
+          />
+          <span
+            className="size-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-[mac-dots_1.4s_infinite_ease-in-out]"
+            style={{ animationDelay: "360ms" }}
+          />
         </div>
 
         {/* ── Hardware & Network Badge ── */}
-        <div className="flex items-center gap-2 rounded-full border border-border/80 bg-card/80 px-3 py-1 text-[11px] font-mono text-muted-foreground shadow-xs backdrop-blur-md">
+        <div className="flex items-center gap-2 rounded-full border border-border/80 bg-card/80 px-3.5 py-1.5 text-[11px] font-mono text-muted-foreground shadow-xs backdrop-blur-md">
           <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
           <span>ESP32 Telemetry Sync · 256-bit TLS</span>
         </div>
-
       </div>
     </div>
   );

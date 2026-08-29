@@ -5,8 +5,6 @@ import {
   USERS,
   ROLE_CONFIG,
   STATUS_CONFIG,
-  getUserSummary,
-  getRoleDistribution,
   getActivityByDay,
 } from "@/data/users";
 import {
@@ -34,7 +32,24 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TablePagination } from "@/components/dashboard/table-pagination";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
   Users,
@@ -44,6 +59,12 @@ import {
   Search,
   MoreHorizontal,
   Plus,
+  ShieldCheck,
+  Sprout,
+  Wrench,
+  Eye,
+  CheckCircle2,
+  Lock,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -57,22 +78,168 @@ import {
   YAxis,
   Tooltip,
 } from "recharts";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { createBrowserClient } from "@supabase/ssr";
+import type { Database } from "@/lib/supabase/types";
+import type { SystemUser, UserRole, UserStatus } from "@/data/users";
+import { toast } from "sonner";
+import { useUserRole } from "@/lib/use-user-role";
 
-const summary = getUserSummary();
-const roleDistribution = getRoleDistribution();
-const activityByDay = getActivityByDay();
+const ROLE_PERMISSIONS_INFO = [
+  {
+    role: "admin" as const,
+    title: "Administrator",
+    icon: ShieldCheck,
+    color: "text-violet-400 bg-violet-400/10 border-violet-400/20",
+    badge: "Full Control",
+    description:
+      "Full administrative governance. Manage user roles, invite team members, adjust global climate setpoints, and override all IoT actuators.",
+    permissions: [
+      "Manage all user roles & account statuses",
+      "Edit system setpoints & climate targets",
+      "Manual emergency override on all hardware",
+      "Manage all cultivation batches & automations",
+    ],
+  },
+  {
+    role: "operator" as const,
+    title: "Cultivation Operator",
+    icon: Sprout,
+    color: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20",
+    badge: "Operations",
+    description:
+      "Responsible for oyster mushroom cultivation batches, monitoring fruiting stages, triggering manual misting/fans, and logging harvests.",
+    permissions: [
+      "Create & advance cultivation batches",
+      "Log harvest yields & contamination reports",
+      "Trigger manual misting & exhaust fan cycles",
+      "View sensor telemetry & daily metrics",
+    ],
+  },
+  {
+    role: "technician" as const,
+    title: "IoT Technician",
+    icon: Wrench,
+    color: "text-amber-400 bg-amber-400/10 border-amber-400/20",
+    badge: "Hardware & IoT",
+    description:
+      "Manages hardware sensors (DHT22, ESP32), actuator relays, automations, and scheduled device timers. Inspects hardware error logs.",
+    permissions: [
+      "Configure automation rules & thresholds",
+      "Manage scheduled device photoperiods",
+      "Perform actuator diagnostics & calibration",
+      "Inspect telemetry & hardware error logs",
+    ],
+  },
+  {
+    role: "viewer" as const,
+    title: "Viewer (Default for New Users)",
+    icon: Eye,
+    color: "text-sky-400 bg-sky-400/10 border-sky-400/20",
+    badge: "Read-Only",
+    description:
+      "Auditor and observer role assigned automatically to newly registered accounts. Can view live environment metrics with control actions locked.",
+    permissions: [
+      "Monitor real-time DHT22 sensor readings",
+      "Inspect growth progress & harvest charts",
+      "View greenhouse logs and alerts",
+      "Read-only (control actions disabled)",
+    ],
+  },
+];
 
 export default function UsersPage() {
+  const { role: currentUserRole, isAdmin } = useUserRole();
+  const [usersList, setUsersList] = useState<SystemUser[]>([]);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  // Edit User Dialog State
+  const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
+  const [editRole, setEditRole] = useState<UserRole>("viewer");
+  const [editStatus, setEditStatus] = useState<UserStatus>("active");
+  const [editZone, setEditZone] = useState<string>("All Zones");
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  async function loadLiveUsers() {
+    try {
+      const supabase = createBrowserClient<Database>(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+      );
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (data && data.length > 0) {
+        // Exclude dummy sample seed users so only real registered accounts appear
+        const realUsers = data.filter(
+          (u) => !u.id.startsWith("USR-") && !u.email.endsWith("@smartgrow.io")
+        );
+
+        const mapped: SystemUser[] = realUsers.map((u) => {
+          const initials = (u.full_name || u.email)
+            .split(" ")
+            .map((n) => n[0])
+            .join("")
+            .toUpperCase()
+            .slice(0, 2);
+
+          return {
+            id: u.id,
+            fullName: u.full_name || u.email.split("@")[0],
+            email: u.email,
+            role: u.role,
+            status: u.status,
+            avatar: u.avatar || initials,
+            avatarGradient: u.avatar_gradient || "from-emerald-500 to-teal-600",
+            zone: u.zone || "Zone A",
+            lastActive: u.last_active || u.created_at,
+            joinedAt: u.created_at,
+            sessionsToday: u.sessions_today ?? 1,
+            actionsThisWeek: u.actions_this_week ?? 0,
+          };
+        });
+        setUsersList(mapped);
+      } else {
+        setUsersList([]);
+      }
+    } catch (err) {
+      console.warn("Error loading users:", err);
+      setUsersList([]);
+    }
+  }
+
+  useEffect(() => {
+    loadLiveUsers();
+  }, []);
+
+  const summary = useMemo(() => {
+    const total = usersList.length;
+    const active = usersList.filter((u) => u.status === "active").length;
+    const onlineToday = usersList.filter((u) => u.sessionsToday > 0).length;
+    const totalActions = usersList.reduce((sum, u) => sum + u.actionsThisWeek, 0);
+    return { total, active, onlineToday, totalActions };
+  }, [usersList]);
+
+  const roleDistribution = useMemo(() => {
+    return [
+      { name: "Admin", value: usersList.filter((u) => u.role === "admin").length, fill: "#a855f7" },
+      { name: "Operator", value: usersList.filter((u) => u.role === "operator").length, fill: "#10b981" },
+      { name: "Technician", value: usersList.filter((u) => u.role === "technician").length, fill: "#f59e0b" },
+      { name: "Viewer", value: usersList.filter((u) => u.role === "viewer").length, fill: "#38bdf8" },
+    ];
+  }, [usersList]);
+
+  const activityByDay = useMemo(() => getActivityByDay(), []);
+
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return USERS.filter((u) => {
+    return usersList.filter((u) => {
       const matchesSearch =
         u.fullName.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
@@ -81,13 +248,63 @@ export default function UsersPage() {
       const matchesStatus = statusFilter === "all" || u.status === statusFilter;
       return matchesSearch && matchesRole && matchesStatus;
     });
-  }, [query, roleFilter, statusFilter]);
+  }, [usersList, query, roleFilter, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const paginatedUsers = useMemo(() => {
     return filteredUsers.slice((safePage - 1) * pageSize, safePage * pageSize);
   }, [filteredUsers, safePage, pageSize]);
+
+  // Open Edit User Modal
+  const handleOpenEdit = (user: SystemUser) => {
+    setEditingUser(user);
+    setEditRole(user.role);
+    setEditStatus(user.status);
+    setEditZone(user.zone);
+  };
+
+  // Save Role / Status Changes to Supabase
+  const handleSaveUserPermissions = async () => {
+    if (!editingUser) return;
+    setIsUpdating(true);
+
+    try {
+      const supabase = createBrowserClient<Database>(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+      );
+
+      const { error } = await supabase
+        .from("users")
+        .update({
+          role: editRole,
+          status: editStatus,
+          zone: editZone,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingUser.id);
+
+      if (error) {
+        toast.error(`Failed to update permissions: ${error.message}`);
+      } else {
+        toast.success(`Updated ${editingUser.fullName}'s role to ${editRole.toUpperCase()}`);
+        setUsersList((prev) =>
+          prev.map((u) =>
+            u.id === editingUser.id
+              ? { ...u, role: editRole, status: editStatus, zone: editZone }
+              : u
+          )
+        );
+        setEditingUser(null);
+      }
+    } catch (err: unknown) {
+      console.error(err);
+      toast.error("An error occurred while saving user permissions.");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const metrics = [
     {
@@ -136,13 +353,14 @@ export default function UsersPage() {
     <div className="flex-1 space-y-6 p-6 pt-6 bg-background min-h-screen text-foreground">
       <PageHeader
         supertitle="Administration"
-        title="User Management"
-        subtitle="Manage greenhouse operators, technicians, and viewer accounts for SmartGrow."
+        title="User Management & Access Control"
+        subtitle="Manage greenhouse operators, technicians, and viewer permissions across SmartGrow."
         actions={
-          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs px-5 gap-2">
-            <Plus className="size-3.5" />
-            Add User
-          </Button>
+          <div className="flex items-center gap-3">
+            <Badge variant="outline" className="text-xs font-mono py-1 px-3 border-border">
+              Your Role: <span className="font-bold text-primary ml-1 uppercase">{currentUserRole}</span>
+            </Badge>
+          </div>
         }
       />
 
@@ -291,12 +509,12 @@ export default function UsersPage() {
                   <Tooltip
                     content={({ active, payload }) => {
                       if (!active || !payload?.length) return null;
-                      const d = payload[0]?.payload;
                       return (
-                        <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg">
-                          <p className="font-semibold">
-                            {d.name}: {d.value} users
-                          </p>
+                        <div className="rounded-lg border border-border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-lg">
+                          <span className="font-semibold">
+                            {payload[0]?.name}:
+                          </span>{" "}
+                          <span>{String(payload[0]?.value)}</span>
                         </div>
                       );
                     }}
@@ -304,14 +522,17 @@ export default function UsersPage() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground mt-2">
-              {roleDistribution.map((r) => (
-                <span key={r.name} className="inline-flex items-center gap-1.5">
+            <div className="mt-2 flex flex-wrap justify-center gap-3">
+              {roleDistribution.map((item) => (
+                <span
+                  key={item.name}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                >
                   <span
                     className="size-2 rounded-full"
-                    style={{ background: r.fill }}
+                    style={{ backgroundColor: item.fill }}
                   />
-                  {r.name} ({r.value})
+                  {item.name} ({item.value})
                 </span>
               ))}
             </div>
@@ -328,8 +549,7 @@ export default function UsersPage() {
                 All Users
               </CardTitle>
               <CardDescription className="text-[11px] font-medium text-muted-foreground/60">
-                Manage accounts, roles, and access permissions for the SmartGrow
-                system.
+                Manage accounts, roles, and access permissions for the SmartGrow system.
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -415,9 +635,13 @@ export default function UsersPage() {
                   </TableRow>
                 ) : (
                   paginatedUsers.map((user) => {
-                    const rc = ROLE_CONFIG[user.role];
-                    const sc = STATUS_CONFIG[user.status];
+                    const rc = ROLE_CONFIG[user.role] || ROLE_CONFIG.viewer;
+                    const sc = STATUS_CONFIG[user.status] || STATUS_CONFIG.active;
                     const isOnline = user.sessionsToday > 0;
+                    const isProfileImg =
+                      user.avatar &&
+                      (user.avatar.startsWith("http") || user.avatar.startsWith("/"));
+
                     return (
                       <TableRow
                         key={user.id}
@@ -427,21 +651,36 @@ export default function UsersPage() {
                           <div className="flex items-center gap-3">
                             <div className="relative">
                               <Avatar className="size-8 border border-border">
+                                {isProfileImg ? (
+                                  <AvatarImage
+                                    src={user.avatar}
+                                    alt={user.fullName}
+                                    className="object-cover"
+                                  />
+                                ) : null}
                                 <AvatarFallback
                                   className={cn(
                                     "bg-gradient-to-br text-[9px] font-bold text-white",
                                     user.avatarGradient
                                   )}
                                 >
-                                  {user.avatar}
+                                  {user.fullName
+                                    .split(" ")
+                                    .map((n) => n[0])
+                                    .join("")
+                                    .slice(0, 2)
+                                    .toUpperCase()}
                                 </AvatarFallback>
                               </Avatar>
                               {isOnline && (
-                                <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-card bg-emerald-500" />
+                                <span
+                                  className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-emerald-400 ring-2 ring-card"
+                                  title="Online today"
+                                />
                               )}
                             </div>
-                            <div className="space-y-0.5">
-                              <p className="text-xs font-bold text-foreground leading-none">
+                            <div>
+                              <p className="text-xs font-semibold text-foreground leading-none mb-1">
                                 {user.fullName}
                               </p>
                               <p className="text-[10px] text-muted-foreground font-mono">
@@ -450,45 +689,40 @@ export default function UsersPage() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="text-xs text-muted-foreground font-mono">
                           {user.email}
                         </TableCell>
                         <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <span
-                              className={cn("size-1.5 rounded-full", rc.dot)}
-                            />
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "text-[9px] font-bold uppercase tracking-wider border",
-                                rc.class
-                              )}
-                            >
-                              {rc.label}
-                            </Badge>
-                          </div>
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                              rc.class
+                            )}
+                          >
+                            <span className={cn("size-1.5 rounded-full", rc.dot)} />
+                            {rc.label}
+                          </span>
                         </TableCell>
                         <TableCell className="text-center">
-                          <Badge
-                            variant="outline"
+                          <span
                             className={cn(
-                              "text-[9px] font-bold uppercase tracking-wider border",
+                              "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border",
                               sc.class
                             )}
                           >
+                            <span className={cn("size-1.5 rounded-full", sc.dot)} />
                             {sc.label}
-                          </Badge>
+                          </span>
                         </TableCell>
-                        <TableCell>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-primary/10 text-primary">
+                        <TableCell className="text-xs text-muted-foreground">
+                          <span className="text-[11px] font-medium bg-muted/50 px-2 py-0.5 rounded-md border border-border/40">
                             {user.zone}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right text-xs font-mono font-semibold">
+                        <TableCell className="text-right text-xs font-mono font-semibold text-foreground">
                           {user.actionsThisWeek}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        <TableCell className="text-xs text-muted-foreground font-mono">
                           {new Date(user.lastActive).toLocaleString("en-US", {
                             month: "short",
                             day: "numeric",
@@ -497,13 +731,27 @@ export default function UsersPage() {
                           })}
                         </TableCell>
                         <TableCell className="text-center pr-6">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 text-muted-foreground hover:text-foreground"
-                          >
-                            <MoreHorizontal className="size-4" />
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 hover:bg-muted text-muted-foreground"
+                              >
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48 rounded-xl">
+                              <DropdownMenuLabel className="text-xs">User Actions</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleOpenEdit(user)}
+                                className="text-xs font-semibold cursor-pointer"
+                              >
+                                Edit Role & Permissions
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     );
@@ -512,20 +760,158 @@ export default function UsersPage() {
               </TableBody>
             </Table>
           </div>
-          <TablePagination
-            page={safePage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            totalItems={filteredUsers.length}
-            itemLabel="users"
-            onPageChange={setPage}
-            onPageSizeChange={(s) => {
-              setPageSize(s);
-              setPage(1);
-            }}
-          />
+          <div className="px-6 pt-4">
+            <TablePagination
+              page={safePage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalItems={filteredUsers.length}
+              onPageChange={setPage}
+              onPageSizeChange={(s) => {
+                setPageSize(s);
+                setPage(1);
+              }}
+            />
+          </div>
         </CardContent>
       </Card>
+
+      {/* Role Significance & RBAC Matrix Cards */}
+      <div className="space-y-3">
+        <div>
+          <h3 className="text-base font-bold text-foreground tracking-tight">
+            Role Significance & Permission Governance
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Overview of functional capabilities assigned to each role within the SmartGrow greenhouse platform.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {ROLE_PERMISSIONS_INFO.map((info) => {
+            const Icon = info.icon;
+            return (
+              <Card
+                key={info.role}
+                className="bg-card border-border shadow-xs rounded-2xl p-5 flex flex-col justify-between"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className={cn("size-9 rounded-xl flex items-center justify-center border", info.color)}>
+                      <Icon className="size-4.5" />
+                    </div>
+                    <Badge variant="outline" className={cn("text-[10px] font-bold uppercase", info.color)}>
+                      {info.badge}
+                    </Badge>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-foreground leading-tight">
+                      {info.title}
+                    </h4>
+                    <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                      {info.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-border/60 space-y-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
+                    Capabilities
+                  </p>
+                  <ul className="space-y-1">
+                    {info.permissions.map((p) => (
+                      <li key={p} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                        <CheckCircle2 className="size-3 text-emerald-500 shrink-0 mt-0.5" />
+                        <span>{p}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Edit Role & Permissions Modal */}
+      <Dialog open={!!editingUser} onOpenChange={(o) => !o && setEditingUser(null)}>
+        <DialogContent className="sm:max-w-md rounded-2xl bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-foreground">
+              Modify User Role & Access
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Update access tier and privileges for {editingUser?.fullName} ({editingUser?.email}).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">System Role</Label>
+              <Select value={editRole} onValueChange={(v) => setEditRole(v as UserRole)}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin (Full Control)</SelectItem>
+                  <SelectItem value="operator">Operator (Cultivation & Manual Overrides)</SelectItem>
+                  <SelectItem value="technician">Technician (IoT & Schedules)</SelectItem>
+                  <SelectItem value="viewer">Viewer (Read-Only Monitor)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Account Status</Label>
+              <Select value={editStatus} onValueChange={(v) => setEditStatus(v as UserStatus)}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active (Full access permitted)</SelectItem>
+                  <SelectItem value="inactive">Inactive (Temporary hiatus)</SelectItem>
+                  <SelectItem value="suspended">Suspended (Access blocked)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Assigned Cultivation Zone</Label>
+              <Select value={editZone} onValueChange={setEditZone}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All Zones">All Zones</SelectItem>
+                  <SelectItem value="Zone A">Zone A (Incubation & Oyster A)</SelectItem>
+                  <SelectItem value="Zone B">Zone B (Fruiting Room B)</SelectItem>
+                  <SelectItem value="Zone C">Zone C (Substrate Colonization)</SelectItem>
+                  <SelectItem value="Zone D">Zone D (Harvest Stage)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditingUser(null)}
+              className="text-xs rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveUserPermissions}
+              disabled={isUpdating}
+              className="text-xs rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {isUpdating ? "Updating..." : "Save Permissions"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

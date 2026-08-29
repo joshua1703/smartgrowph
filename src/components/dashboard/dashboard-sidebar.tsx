@@ -29,6 +29,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEffect, useState } from "react";
+import { useUserRole } from "@/lib/use-user-role";
+import { LoadingScreen } from "@/components/loading-screen";
 
 type NavItem = {
   label: string;
@@ -50,8 +52,19 @@ export function SidebarContent({ collapsed = false, onItemClick }: { collapsed?:
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { user } = useUser();
   const { signOut } = useClerk();
+  const { role } = useUserRole();
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut({ redirectUrl: "/login" });
+    } catch {
+      window.location.href = "/login";
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -244,10 +257,10 @@ export function SidebarContent({ collapsed = false, onItemClick }: { collapsed?:
                 <>
                   <div className="min-w-0 flex-1 text-left">
                     <p className="truncate text-xs font-bold text-foreground leading-tight group-hover:text-primary transition-colors">
-                      {user?.fullName || "IT Officer"}
+                      {user?.fullName || "Grower"}
                     </p>
-                    <p className="truncate text-[10px] font-medium text-muted-foreground">
-                      admin
+                    <p className="truncate text-[10px] font-medium uppercase font-mono tracking-wider text-muted-foreground">
+                      {role}
                     </p>
                   </div>
                   <MoreVertical className="size-4 shrink-0 text-primary transition-colors" />
@@ -301,7 +314,7 @@ export function SidebarContent({ collapsed = false, onItemClick }: { collapsed?:
 
             {/* Item 2: Logout */}
             <DropdownMenuItem
-              onClick={() => signOut({ redirectUrl: "/login" })}
+              onClick={handleLogout}
               className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer transition-colors"
             >
               <LogOut className="size-4" />
@@ -312,6 +325,16 @@ export function SidebarContent({ collapsed = false, onItemClick }: { collapsed?:
 
         {/* ── User Profile & Account Dialog ── */}
         <UserProfileDialog open={isProfileOpen} onOpenChange={setIsProfileOpen} />
+
+        {/* ── Fullscreen Logout Loading Screen Overlay ── */}
+        {isLoggingOut && (
+          <div className="fixed inset-0 z-[9999] bg-background animate-in fade-in duration-200">
+            <LoadingScreen
+              title="Signing out of SmartGrow..."
+              subtitle="Securing greenhouse session and clearing active credentials."
+            />
+          </div>
+        )}
       </div>
     </div>
   );
