@@ -46,30 +46,33 @@ export function ActivityFeed({ className }: { className?: string }) {
 
       if (!logs || logs.length === 0) return [];
 
-      return logs.map((l) => {
+      return logs.slice(0, 5).map((l) => {
         const isFan = l.actuator_type === "fan";
         const isFogger = l.actuator_type === "fogger";
         const isSprinkler = l.actuator_type === "sprinkler";
 
-        const initials = isFan ? "FN" : isFogger ? "FG" : isSprinkler ? "SP" : "LD";
+        const initials = isFan ? "FN" : isFogger ? "FG" : isSprinkler ? "SP" : "EX";
         const avatarClass = isFan
-          ? "bg-emerald-600"
+          ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
           : isFogger
-          ? "bg-sky-600"
+          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
           : isSprinkler
-          ? "bg-purple-600"
-          : "bg-amber-600";
+          ? "bg-purple-500/20 text-purple-400 border border-purple-500/30"
+          : "bg-amber-500/20 text-amber-400 border border-amber-500/30";
+
+        const isActivated = l.action === "activated";
 
         return {
           id: l.id,
           name: l.actuator_name,
           initials,
           avatarClass,
-          action: `${l.action.charAt(0).toUpperCase() + l.action.slice(1)} —`,
-          highlight: `${l.reason} in ${l.zone}`,
-          location: `Trigger: ${l.trigger.toUpperCase()}`,
+          action: l.action,
+          isActivated,
+          reason: l.reason || `${l.action} in ${l.zone || "Fruiting Bay"}`,
+          zone: l.zone || "Fruiting Bay",
+          trigger: l.trigger?.toUpperCase() || "MANUAL",
           time: timeAgo(l.created_at),
-          badge: l.action === "error" ? "Error Alert" : l.trigger === "auto" ? "Automated" : "Manual",
         };
       });
     },
@@ -78,74 +81,83 @@ export function ActivityFeed({ className }: { className?: string }) {
 
   return (
     <Card className={cn("flex h-full flex-col", className)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <div>
-          <CardTitle className="text-lg font-bold tracking-tight">
+          <CardTitle className="text-base font-bold tracking-tight text-foreground">
             System Activity
           </CardTitle>
-          <CardDescription className="text-xs font-medium text-muted-foreground/40">
-            Real-time events from database telemetry.
+          <CardDescription className="text-[11px] font-medium text-muted-foreground/60">
+            Real-time events from database telemetry (Latest 5).
           </CardDescription>
         </div>
         <Link href="/dashboard/actuator-logs">
           <Button
             variant="link"
-            className="h-auto p-0 text-[10px] font-black uppercase tracking-[0.2em] text-primary transition-opacity hover:opacity-80"
+            className="h-auto p-0 text-[10px] font-bold uppercase tracking-wider text-primary hover:opacity-80"
           >
             View All
           </Button>
         </Link>
       </CardHeader>
 
-      <CardContent className="flex-1 space-y-6 py-2">
+      <CardContent className="flex-1 space-y-3.5 py-1">
         {activities.length === 0 ? (
           <div className="h-[180px] w-full flex flex-col items-center justify-center text-center p-4 text-muted-foreground">
-            <History className="size-7 text-muted-foreground/30 mb-2 animate-pulse" />
+            <History className="size-6 text-muted-foreground/30 mb-2 animate-pulse" />
             <p className="text-xs font-semibold text-foreground">No recent events logged</p>
             <p className="text-[11px] text-muted-foreground/60 max-w-xs mt-1">
-              Events will appear as relay commands and sensors log activity to the database.
+              Events will appear as relay commands and automations trigger in the greenhouse.
             </p>
           </div>
         ) : (
           activities.map((a) => (
-            <div key={a.id} className="flex gap-3">
-              <Avatar className="size-10 shrink-0 border border-white/5 ring-1 ring-white/5">
+            <div key={a.id} className="flex items-start gap-2.5 group">
+              <Avatar className="size-7 shrink-0 mt-0.5">
                 <AvatarFallback
                   className={cn(
-                    "text-[12px] font-bold text-white",
+                    "text-[10px] font-bold",
                     a.avatarClass,
                   )}
                 >
                   {a.initials}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex-1 min-w-0 space-y-0.5">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-bold text-foreground truncate">
-                    {a.name}
-                  </p>
-                  <span className="text-[10px] font-medium text-muted-foreground/50 shrink-0 ml-4">
+
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-xs font-semibold text-foreground truncate">
+                      {a.name}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-[9px] px-1.5 py-0 font-medium capitalize",
+                        a.isActivated
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                          : "border-muted-foreground/20 bg-muted/40 text-muted-foreground"
+                      )}
+                    >
+                      {a.action}
+                    </Badge>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground/50 shrink-0 font-mono">
                     {a.time}
                   </span>
                 </div>
-                <p className="text-[13px] font-medium text-muted-foreground/80 leading-snug">
-                  {a.action}{" "}
-                  <span className="font-bold text-primary">
-                    {a.highlight}
-                  </span>
+
+                <p className="text-[11px] text-muted-foreground leading-snug line-clamp-2">
+                  {a.reason}
                 </p>
-                <div className="flex flex-wrap gap-2 pt-1.5">
-                  <span className="inline-flex items-center rounded-full bg-muted/40 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-muted-foreground">
-                    {a.location}
+
+                <div className="flex items-center gap-2 pt-0.5">
+                  <span className="text-[9px] font-semibold text-muted-foreground/50 tracking-wider">
+                    TRIGGER: {a.trigger}
                   </span>
-                  {a.badge && (
-                    <Badge
-                      variant="outline"
-                      className="border-primary/20 bg-primary/5 text-[9px] font-black uppercase tracking-wider text-primary px-1.5 py-0"
-                    >
-                      {a.badge}
-                    </Badge>
-                  )}
+                  <span className="size-1 rounded-full bg-muted-foreground/30" />
+                  <span className="text-[9px] text-muted-foreground/50">
+                    {a.zone}
+                  </span>
                 </div>
               </div>
             </div>
@@ -153,13 +165,13 @@ export function ActivityFeed({ className }: { className?: string }) {
         )}
       </CardContent>
 
-      <CardFooter className="border-t border-border/50 justify-center py-6">
+      <CardFooter className="border-t border-border/40 justify-center py-3.5 mt-auto">
         <Link href="/dashboard/actuator-logs" className="w-full text-center">
           <Button
             variant="link"
-            className="group h-auto p-0 text-xs font-bold text-muted-foreground/60 hover:text-foreground transition-all"
+            className="group h-auto p-0 text-[11px] font-semibold text-muted-foreground/70 hover:text-foreground transition-all"
           >
-            <ArrowUpRight className="mr-2 size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            <ArrowUpRight className="mr-1.5 size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             Open System Logs
           </Button>
         </Link>

@@ -244,10 +244,16 @@ DROP POLICY IF EXISTS "View growth batches" ON public.growth_batches;
 DROP POLICY IF EXISTS "Authenticated users can create batches" ON public.growth_batches;
 DROP POLICY IF EXISTS "Users or Admins can update batches" ON public.growth_batches;
 DROP POLICY IF EXISTS "Users or Admins can delete batches" ON public.growth_batches;
+DROP POLICY IF EXISTS "Allow create growth batches" ON public.growth_batches;
+DROP POLICY IF EXISTS "Allow update growth batches" ON public.growth_batches;
+DROP POLICY IF EXISTS "Allow delete growth batches" ON public.growth_batches;
 
 DROP POLICY IF EXISTS "View daily growth logs" ON public.daily_growth_logs;
 DROP POLICY IF EXISTS "Authenticated users can insert daily growth logs" ON public.daily_growth_logs;
 DROP POLICY IF EXISTS "Authenticated users can update daily growth logs" ON public.daily_growth_logs;
+DROP POLICY IF EXISTS "Allow insert daily growth logs" ON public.daily_growth_logs;
+DROP POLICY IF EXISTS "Allow update daily growth logs" ON public.daily_growth_logs;
+DROP POLICY IF EXISTS "Allow delete daily growth logs" ON public.daily_growth_logs;
 
 DROP POLICY IF EXISTS "View actuators" ON public.actuators;
 DROP POLICY IF EXISTS "Control actuators" ON public.actuators;
@@ -294,18 +300,18 @@ CREATE POLICY "View growth batches" ON public.growth_batches
   FOR SELECT TO authenticated, anon
   USING (true);
 
-CREATE POLICY "Authenticated users can create batches" ON public.growth_batches
-  FOR INSERT TO authenticated
+CREATE POLICY "Allow create growth batches" ON public.growth_batches
+  FOR INSERT TO authenticated, anon
   WITH CHECK (true);
 
-CREATE POLICY "Users or Admins can update batches" ON public.growth_batches
-  FOR UPDATE TO authenticated
-  USING (user_id = public.requesting_user_id() OR public.is_admin() OR user_id IS NULL)
-  WITH CHECK (user_id = public.requesting_user_id() OR public.is_admin() OR user_id IS NULL);
+CREATE POLICY "Allow update growth batches" ON public.growth_batches
+  FOR UPDATE TO authenticated, anon
+  USING (true)
+  WITH CHECK (true);
 
-CREATE POLICY "Users or Admins can delete batches" ON public.growth_batches
-  FOR DELETE TO authenticated
-  USING (user_id = public.requesting_user_id() OR public.is_admin() OR user_id IS NULL);
+CREATE POLICY "Allow delete growth batches" ON public.growth_batches
+  FOR DELETE TO authenticated, anon
+  USING (true);
 
 -- ----------------------------------------------------------------------------
 -- DAILY GROWTH LOGS POLICIES
@@ -314,14 +320,18 @@ CREATE POLICY "View daily growth logs" ON public.daily_growth_logs
   FOR SELECT TO authenticated, anon
   USING (true);
 
-CREATE POLICY "Authenticated users can insert daily growth logs" ON public.daily_growth_logs
-  FOR INSERT TO authenticated
+CREATE POLICY "Allow insert daily growth logs" ON public.daily_growth_logs
+  FOR INSERT TO authenticated, anon
   WITH CHECK (true);
 
-CREATE POLICY "Authenticated users can update daily growth logs" ON public.daily_growth_logs
-  FOR UPDATE TO authenticated
+CREATE POLICY "Allow update daily growth logs" ON public.daily_growth_logs
+  FOR UPDATE TO authenticated, anon
   USING (true)
   WITH CHECK (true);
+
+CREATE POLICY "Allow delete daily growth logs" ON public.daily_growth_logs
+  FOR DELETE TO authenticated, anon
+  USING (true);
 
 -- ----------------------------------------------------------------------------
 -- ACTUATORS & ACTUATOR LOGS POLICIES
@@ -331,7 +341,7 @@ CREATE POLICY "View actuators" ON public.actuators
   USING (true);
 
 CREATE POLICY "Control actuators" ON public.actuators
-  FOR UPDATE TO authenticated
+  FOR ALL TO authenticated, anon
   USING (true)
   WITH CHECK (true);
 
@@ -354,7 +364,7 @@ CREATE POLICY "View automations" ON public.device_automations
   USING (true);
 
 CREATE POLICY "Manage automations" ON public.device_automations
-  FOR ALL TO authenticated
+  FOR ALL TO authenticated, anon
   USING (true)
   WITH CHECK (true);
 
@@ -363,7 +373,7 @@ CREATE POLICY "View schedules" ON public.device_schedules
   USING (true);
 
 CREATE POLICY "Manage schedules" ON public.device_schedules
-  FOR ALL TO authenticated
+  FOR ALL TO authenticated, anon
   USING (true)
   WITH CHECK (true);
 
@@ -375,7 +385,7 @@ CREATE POLICY "View system settings" ON public.system_settings
   USING (true);
 
 CREATE POLICY "Update system settings" ON public.system_settings
-  FOR ALL TO authenticated
+  FOR ALL TO authenticated, anon
   USING (true)
   WITH CHECK (true);
 
@@ -398,17 +408,17 @@ ON CONFLICT (id) DO UPDATE SET
   temp_target = EXCLUDED.temp_target,
   humidity_target = EXCLUDED.humidity_target;
 
--- B. Default Actuator Hardware Definitions (Hardware pin mappings)
+-- B. Default Actuator Hardware Definitions (4-Channel Relay Actuators)
 INSERT INTO public.actuators (id, name, type, zone, is_active, status, watt_base)
 VALUES
-  ('FAN-01', 'Exhaust Fan A', 'fan', 'Zone A', false, 'normal', 45),
-  ('FAN-02', 'Exhaust Fan B', 'fan', 'Zone B', false, 'normal', 45),
-  ('FOG-01', 'Fogger Unit 1', 'fogger', 'Zone A', false, 'normal', 35),
-  ('FOG-02', 'Fogger Unit 2', 'fogger', 'Zone C', false, 'normal', 35),
-  ('SPR-01', 'Sprinkler System', 'sprinkler', 'Zone D', false, 'normal', 60),
-  ('LED-01', 'LED Grow Light A', 'led', 'Zone A', false, 'normal', 120),
-  ('LED-02', 'LED Grow Light B', 'led', 'Zone B', false, 'normal', 120)
-ON CONFLICT (id) DO NOTHING;
+  ('FAN-01', 'Cooling Fan', 'fan', 'Fruiting Bay', false, 'normal', 10),
+  ('FOG-01', 'Ultrasonic Fogger', 'fogger', 'Fruiting Bay', false, 'normal', 25),
+  ('SPR-01', 'Sprinkler System', 'sprinkler', 'Fruiting Bay', false, 'normal', 40),
+  ('EXH-01', 'Exhaust Vent', 'fan', 'Fruiting Bay', false, 'normal', 15)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  zone = EXCLUDED.zone,
+  watt_base = EXCLUDED.watt_base;
 
 -- ============================================================================
 -- OPTIONAL: RUN THIS TO PURGE ANY EXISTING DUMMY DATA FROM PREVIOUS RUNS

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { DashboardSidebar, SidebarContent } from "@/components/dashboard/dashboard-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LiveToastStreamer } from "@/components/dashboard/live-toast-streamer";
+import { AutomationRunner } from "@/components/dashboard/automation-runner";
 import { AuthUserSync } from "@/components/auth/auth-user-sync";
 import {
   Sheet,
@@ -23,6 +24,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-svh overflow-hidden bg-background text-foreground">
       {/* Auto-Sync Clerk Profile to Supabase */}
       <AuthUserSync />
+
+      {/* Live Automation & Schedule Execution Engine */}
+      <AutomationRunner />
 
       {/* Background Live Telemetry & Automation Log Notifier */}
       <LiveToastStreamer />

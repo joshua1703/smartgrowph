@@ -19,12 +19,10 @@ import { cn } from "@/lib/utils";
 import { useUserRole } from "@/lib/use-user-role";
 
 const DEFAULT_DEVICES = [
-  { id: "FAN-01", name: "Exhaust Fan A", type: "fan" as const, zone: "Zone A", wattBase: 45 },
-  { id: "FAN-02", name: "Exhaust Fan B", type: "fan" as const, zone: "Zone B", wattBase: 45 },
-  { id: "FOG-01", name: "Fogger Unit 1", type: "fogger" as const, zone: "Zone A", wattBase: 35 },
-  { id: "FOG-02", name: "Fogger Unit 2", type: "fogger" as const, zone: "Zone C", wattBase: 35 },
-  { id: "SPR-01", name: "Sprinkler System", type: "sprinkler" as const, zone: "Zone D", wattBase: 60 },
-  { id: "LED-01", name: "LED Grow Light A", type: "led" as const, zone: "Zone A", wattBase: 120 },
+  { id: "FAN-01", name: "Cooling Fan", type: "fan" as const, zone: "Fruiting Bay", wattBase: 10 },
+  { id: "FOG-01", name: "Ultrasonic Fogger", type: "fogger" as const, zone: "Fruiting Bay", wattBase: 25 },
+  { id: "SPR-01", name: "Sprinkler System", type: "sprinkler" as const, zone: "Fruiting Bay", wattBase: 40 },
+  { id: "EXH-01", name: "Exhaust Vent", type: "fan" as const, zone: "Fruiting Bay", wattBase: 15 },
 ];
 
 function getDeviceIcon(type: string) {

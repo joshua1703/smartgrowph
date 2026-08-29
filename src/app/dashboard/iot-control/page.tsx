@@ -19,26 +19,19 @@ export default function IoTControlPage() {
         subtitle="Manage overrides, automations, schedules, and preferences for the Oyster Mushroom greenhouse."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Main Control Panel */}
-        <div className="col-span-1 lg:col-span-1">
-          <DeviceControl />
-        </div>
+      {/* 2x2 Balanced Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* 1. Manual Actuator Overrides */}
+        <DeviceControl />
 
-        {/* Automations */}
-        <div className="col-span-1 lg:col-span-1">
-          <DeviceAutomation />
-        </div>
+        {/* 2. Global Climate Preferences & Setpoints */}
+        <SystemSettings />
 
-        {/* Schedules */}
-        <div className="col-span-1 lg:col-span-1">
-          <DeviceSchedules />
-        </div>
+        {/* 3. Sensor-Driven Automations */}
+        <DeviceAutomation />
 
-        {/* System Settings */}
-        <div className="col-span-1 md:col-span-2 lg:col-span-3 max-w-xl">
-          <SystemSettings />
-        </div>
+        {/* 4. Scheduled Timed Actions */}
+        <DeviceSchedules />
       </div>
     </div>
   );

@@ -242,15 +242,27 @@ export function DeviceAutomation() {
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right text-xs">Sensor</Label>
-                  <Select value={newSensor} onValueChange={setNewSensor}>
+                  <Select
+                    value={newSensor}
+                    onValueChange={(val) => {
+                      setNewSensor(val);
+                      if (val === "temperature") {
+                        setNewCondition(">");
+                        setNewThreshold("28");
+                        setNewActuator("fan");
+                      } else if (val === "humidity") {
+                        setNewCondition("<");
+                        setNewThreshold("75");
+                        setNewActuator("fogger");
+                      }
+                    }}
+                  >
                     <SelectTrigger className="col-span-3">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="temperature">Temperature (°C)</SelectItem>
                       <SelectItem value="humidity">Humidity (% RH)</SelectItem>
-                      <SelectItem value="co2">CO₂ Level (ppm)</SelectItem>
-                      <SelectItem value="light">Light Level (lux)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -283,10 +295,10 @@ export function DeviceAutomation() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="fan">Fan (Cooling)</SelectItem>
-                      <SelectItem value="fogger">Fogger (Humidity)</SelectItem>
-                      <SelectItem value="sprinkler">Sprinkler (Watering)</SelectItem>
-                      <SelectItem value="led">LED Grow Light</SelectItem>
+                      <SelectItem value="fan">Cooling Fan</SelectItem>
+                      <SelectItem value="fogger">Ultrasonic Fogger</SelectItem>
+                      <SelectItem value="sprinkler">Sprinkler System</SelectItem>
+                      <SelectItem value="exhaust">Exhaust Vent</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
