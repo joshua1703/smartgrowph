@@ -99,13 +99,8 @@ export function Footer() {
             <span>Smart Greenhouse Management Platform</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+          <div className="flex items-center">
             <ThemeToggle className="size-8" />
-            <div className="flex items-center gap-4">
-              <span>DHT22 Telemetry</span>
-              <span>•</span>
-              <span>MySQL Storage</span>
-            </div>
           </div>
         </div>
       </div>
